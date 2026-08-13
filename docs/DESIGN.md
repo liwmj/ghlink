@@ -98,8 +98,9 @@
 - 原子写（临时文件 + os.replace），损坏文件回退默认
 - Schema v1 字段：`schema_version / state / probe / current_ip / verify_success / switched_at / last_error / history`
 
-### 3.7 notifier.py — 飞书告警
+### 3.7 notifier.py — 多渠道通知
 
+- 渠道：通用 Webhook（默认）/ 飞书 / 钉钉 / 企业微信 / Telegram（v0.2 多通道化，每个渠道一个 POST 适配器）
 - 冷却期去重（基于 last_alert_at 时间差）
 - 发送失败不阻断主流程（try/except 吞掉）
 
