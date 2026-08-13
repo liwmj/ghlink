@@ -14,10 +14,6 @@ if [ -f /etc/systemd/system/ghlink.timer ]; then
     systemctl daemon-reload 2>/dev/null || true
 fi
 
-# 3. 清理 __pycache__（构建含 pycache 时卸载报 not empty 警告，P2 修复）
-find /usr/lib/ghlink -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-rm -rf /usr/lib/ghlink/src/ghlink/__pycache__ 2>/dev/null || true
-
-# 4. 保留用户配置（conffile 机制自动处理 /etc/ghlink/config.json）
+# 3. 保留用户配置（conffile 机制自动处理 /etc/ghlink/config.json）
 
 exit 0

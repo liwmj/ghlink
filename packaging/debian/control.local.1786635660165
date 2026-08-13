@@ -1,3 +1,7 @@
+# Debian 打包目录（ghlink v0.2.0）
+# 构建: dpkg-deb --build packaging/debian ghlink_0.2.0-1_all.deb
+# 参考: v0.2 安装包技术方案草案（deb 线：/usr/lib/ghlink + /usr/bin/ghlink + /etc/ghlink config）
+
 Package: ghlink
 Version: 0.2.0-1
 Section: net
@@ -8,5 +12,6 @@ Maintainer: Mason Lee <liwmj@outlook.com>
 Description: GitHub 链路自愈工具
  主动监控 GitHub 连通性，异常时自动获取新 IP 写入 hosts，
  自检回滚 + 多渠道告警，跨平台零依赖。
+ .
  使用: ghlink enable 启用值守（systemd timer，1 分钟粒度），
  ghlink status 查看状态，ghlink disable 停用。
