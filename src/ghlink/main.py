@@ -143,6 +143,7 @@ def run(config_path: str = "config.json") -> int:
         # 5) 自愈成功：进入 verifying，需连续 verify_rounds 轮成功才 normal（P0-3）
         st["state"] = "verifying"
         st["verify_success"] = 1  # 本轮回滚自检已通过，算第一轮成功
+        st["probe"]["consecutive_failures"] = 0  # 切换成功：失败计数重置，重新累计
         first_ip = next(iter(entries.values()))[0]
         st["current_ip"] = first_ip
         st["last_error"] = None

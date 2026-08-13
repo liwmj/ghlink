@@ -66,5 +66,5 @@ def probe_all(targets: List[str], timeout_sec: float) -> Dict[str, Dict[str, obj
 
 
 def round_ok(results: Dict[str, Dict[str, object]]) -> bool:
-    """本轮是否全部通过。"""
-    return all(r.get("ok") for r in results.values())
+    """本轮是否全部通过（保守：空结果视为失败）。"""
+    return bool(results) and all(r.get("ok") for r in results.values())

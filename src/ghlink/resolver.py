@@ -65,6 +65,21 @@ def _tcp443_ok(ip: str, domain: str, timeout_sec: float) -> bool:
         return False
 
 
+def _precheck(ips: List[str], timeout_sec: float = 5.0) -> List[str]:
+    """候选 IP 列表预检：TCP 443 建连粗筛，返回通过子集。
+
+    注：预检为粗筛（真正三层校验在 probe），固定默认超时 5s。
+    """
+    passed = []
+    for ip in ips:
+        try:
+            with socket.create_connection((ip, 443), timeout=timeout_sec):
+                passed.append(ip)
+        except Exception:
+            pass
+    return passed
+
+
 def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
     """多源获取 + 多数票 + 预检，返回候选 IP 列表（已按健康度排序）。
 
@@ -107,7 +122,7 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
     ranked = [ip for ip, _ in counter.most_common(max_candidates * 2)]
 
     # 3) TCP 443 预检，剔除不通（保留前 max_candidates 个）
-    passed = [ip for ip in ranked if _tcp443_ok(ip, domain, timeout)]
+    passed = _precheck(ranked)
     result = passed[:max_candidates]
     # P2: 成功后写缓存（供后续多源全挂时兜底）
     if result:
