@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict
 
 from . import config as cfgmod
-from . import hosts_manager, lock, notifier, platform_adapter, probe, resolver, state
+from . import hosts_manager, lock, notifier, platform_adapter, probe, resolver, service, state
 
 
 def _state_path(cfg: Dict[str, Any]) -> str:
@@ -162,11 +162,37 @@ def run(config_path: str = "config.json") -> int:
 
 
 def main() -> None:
-    try:
-        sys.exit(run(sys.argv[1] if len(sys.argv) > 1 else "config.json"))
-    except Exception as exc:  # 兜底：任何异常不裸崩，记日志退出 1
-        print(f"[ghlink] fatal: {exc}", file=sys.stderr)
-        sys.exit(1)
+    """CLI 入口：支持子命令 run / enable / disable / status。"""
+    import sys
+
+    args = sys.argv[1:]
+    # 无参数或首个参数不是子命令 → 兼容旧用法：当作 config 路径
+    if not args:
+        sys.exit(run("config.json"))
+
+    first = args[0]
+    if first in ("run",):
+        cfg = args[1] if len(args) > 1 else "config.json"
+        sys.exit(run(cfg))
+    if first == "enable":
+        sys.exit(service.enable())
+    if first == "disable":
+        sys.exit(service.disable())
+    if first == "status":
+        sys.exit(service.status())
+    if first in ("--version", "-V"):
+        from . import __version__
+        print(f"ghlink {__version__}")
+        sys.exit(0)
+    if first in ("--help", "-h"):
+        print("用法: ghlink [run|enable|disable|status] [config.json]")
+        print("  run      单轮探测+自愈（默认，可省略）")
+        print("  enable   注册定时任务（1 分钟粒度，需管理员/root）")
+        print("  disable  移除定时任务")
+        print("  status   显示当前状态与值守情况")
+        sys.exit(0)
+    # 兼容旧用法：直接传 config 路径
+    sys.exit(run(first))
 
 
 if __name__ == "__main__":

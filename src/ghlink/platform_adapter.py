@@ -75,6 +75,22 @@ def _run_cmd(args, timeout: int = 15) -> bool:
         return False
 
 
+def _run_cmd_output(args, timeout: int = 15) -> str:
+    """执行命令并返回 stdout（失败返回空字符串）。"""
+    try:
+        proc = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+            text=True,
+        )
+        return proc.stdout if proc.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def flush_dns() -> bool:
     """刷新 DNS 缓存；失败返回 False（记录日志，不阻断）。
 
