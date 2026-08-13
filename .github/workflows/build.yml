@@ -1,0 +1,102 @@
+name: Build ghlink (v0.2.0)
+
+on:
+  push:
+    tags: ["v0.2.*"]
+  workflow_dispatch:
+
+jobs:
+  build-sdist:
+    name: PyPI sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-python
+          path: dist/
+
+  build-windows:
+    name: Windows exe (PyInstaller + Inno)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build exe
+        run: |
+          pip install pyinstaller
+          pyinstaller packaging/windows/ghlink.spec --distpath dist/windows --workpath build/windows
+      - name: Build Inno installer
+        run: |
+          # iscc 需要 Inno Setup；GitHub runner 无预装，用 chocolatey 装或跳过（v0.2 先出 exe）
+          # choco install innosetup -y 2>$null
+          echo "Inno Setup installer build: optional in v0.2"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/windows/
+
+  build-linux:
+    name: Linux .deb
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build deb
+        run: |
+          pip install wheel
+          python -m build --wheel
+          mkdir -p packaging/debian/usr/share/ghlink
+          cp dist/*.whl packaging/debian/usr/share/ghlink/
+          dpkg-deb --build packaging/debian dist/ghlink_0.2.0-1_all.deb 2>&1 | tail -3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/
+
+  build-macos:
+    name: macOS brew formula (validate)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate formula
+        run: |
+          python3 -m py_compile src/ghlink/*.py
+          ruby -c packaging/brew/ghlink.rb
+      - name: Smoke test
+        run: |
+          pip install .
+          ghlink --version
+          ghlink status
+
+  release:
+    name: Attach to GitHub Release
+    needs: [build-sdist, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v0.2')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.whl
+            artifacts/**/*.tar.gz
+            artifacts/**/*.exe
+            artifacts/**/*.deb
+          generate_release_notes: true
