@@ -47,7 +47,29 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
         except (ImportError, OSError):
             pass  # 回退 PID 文件方案
 
-    # Windows / 无 flock：PID 文件 + 残留接管
+    # Windows：用 msvcrt.locking 内核锁（避免 PID 文件检查-创建竞态）
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+            try:
+                # 单字节锁：锁定文件首字节，非阻塞获取
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.write(fd, f"{os.getpid()} {int(time.time())}".encode())
+                yield True
+            finally:
+                try:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+                os.close(fd)
+            return
+        except (ImportError, OSError):
+            pass  # 回退 PID 文件方案
+
+    # 无 flock/msvcrt：PID 文件 + 残留接管（跨平台兜底）
     acquired = False
     try:
         if os.path.exists(lock_path):

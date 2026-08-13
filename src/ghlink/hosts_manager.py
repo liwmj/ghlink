@@ -41,10 +41,14 @@ def _write_hosts(path: str, content: str) -> bool:
         return False
 
 
-def apply_block(block: str, backup_dir: str = "backup") -> bool:
-    """写入 hosts（替换旧段落）；提权/写入失败返回 False。"""
+def apply_block(block: str, backup_dir: str = "backup") -> tuple:
+    """写入 hosts（替换旧段落）；提权/写入失败返回 (False, "")。
+
+    返回 (ok, backup_path)：ok=False 表示写入失败；ok=True 时 backup_path
+    为本次写入前的备份文件路径（供自检失败回滚使用）。
+    """
     if not platform_adapter.ensure_privilege():
-        return False
+        return False, ""
     path = platform_adapter.get_hosts_path()
     content = _read_hosts(path)
 
@@ -59,16 +63,16 @@ def apply_block(block: str, backup_dir: str = "backup") -> bool:
         content = content.rstrip("\n") + "\n" + block
     else:
         # 段落标记不完整，视为异常：整体重建安全内容
-        return False
+        return False, ""
 
     backup = platform_adapter.backup_hosts(backup_dir)
     if not backup:
-        return False
+        return False, ""
     if not _write_hosts(path, content):
         platform_adapter.restore_hosts(backup)
-        return False
+        return False, ""
     platform_adapter.flush_dns()
-    return True
+    return True, backup
 
 
 def verify_after_apply(targets: List[str], timeout_sec: float) -> bool:

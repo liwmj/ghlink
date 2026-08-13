@@ -6,6 +6,7 @@
 - 标准库 urllib 实现 DoH（GET /resolve?name=xxx&type=A，Accept: application/dns-json）
 """
 import json
+import os
 import socket
 import time
 import urllib.parse
@@ -93,6 +94,13 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
     for ips in sources:
         for ip in ips:
             counter[ip] += 1
+
+    # P2: 本地缓存兜底——多源全失败时，回退到上次成功的缓存候选（最后防线）
+    if not counter:
+        cached = _load_cache(domain, cfg)
+        if cached:
+            counter.update(cached)
+
     if not counter:
         return []
 
@@ -100,4 +108,49 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
 
     # 3) TCP 443 预检，剔除不通（保留前 max_candidates 个）
     passed = [ip for ip in ranked if _tcp443_ok(ip, domain, timeout)]
-    return passed[:max_candidates]
+    result = passed[:max_candidates]
+    # P2: 成功后写缓存（供后续多源全挂时兜底）
+    if result:
+        _save_cache(domain, result, cfg)
+    return result
+
+
+_CACHE_PREFIX = "ghlink_cache_"
+
+
+def _cache_path(domain: str, cfg: Dict[str, object]) -> str:
+    base = cfg.get("state_file", "ghlink_status.json")
+    d = os.path.dirname(base)
+    fname = f"{_CACHE_PREFIX}{domain.replace('.', '_')}.json"
+    return os.path.join(d, fname) if d else fname
+
+
+def _load_cache(domain: str, cfg: Dict[str, object]) -> List[str]:
+    """读取上次成功的候选缓存；不存在/过期返回空列表。"""
+    try:
+        ttl = int(cfg.get("cache_ttl_sec", 3600))
+        p = _cache_path(domain, cfg)
+        if not os.path.exists(p):
+            return []
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if (time.time() - float(data.get("ts", 0))) > ttl:
+            return []
+        return data.get("ips", []) or []
+    except Exception:
+        return []
+
+
+def _save_cache(domain: str, ips: List[str], cfg: Dict[str, object]) -> None:
+    """写入成功候选缓存（原子写）。"""
+    import tempfile
+    try:
+        p = _cache_path(domain, cfg)
+        d = os.path.dirname(os.path.abspath(p)) or "."
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".ghlink_cache_", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"ts": time.time(), "ips": ips}, f)
+        os.replace(tmp, p)
+    except Exception:
+        pass

@@ -70,7 +70,7 @@ def run(config_path: str = "config.json") -> int:
         if ok:
             st["probe"]["consecutive_failures"] = 0
             if st.get("state") in ("switching", "verifying"):
-                # 自愈后验证成功次数
+                # P0-3: 切换后需连续 verify_rounds 轮成功才恢复 normal
                 st["verify_success"] = st.get("verify_success", 0) + 1
                 if st["verify_success"] >= verify_rounds:
                     st["state"] = "normal"
@@ -81,8 +81,9 @@ def run(config_path: str = "config.json") -> int:
         st["probe"]["consecutive_failures"] = st.get("probe", {}).get("consecutive_failures", 0) + 1
         failed = st["probe"]["consecutive_failures"]
 
-        # 冷却期内不重复触发
-        if st.get("state") == "switching" and time.time() - float(st.get("switched_at") or 0) < _cooldown_sec(cfg):
+        # P0-2: 冷却期判断基于 switched_at 时间差，与 state 解耦（避免切换成功后冷却失效）
+        switched_at = float(st.get("switched_at") or 0)
+        if switched_at and (time.time() - switched_at) < _cooldown_sec(cfg):
             state.save(st_path, st)
             return 0
 
@@ -91,12 +92,21 @@ def run(config_path: str = "config.json") -> int:
             state.save(st_path, st)
             return 0
 
-        # 4) 达到阈值 → 自愈：取 IP → 写 hosts → 自检
+        # 4) 达到阈值 → 自愈：对全部探测域名取 IP → 写 hosts → 自检
         st["state"] = "switching"
         st["switched_at"] = time.time()
         st["verify_success"] = 0
-        candidates = resolver.resolve_best(targets[0], cfg.get("resolver", {}))
-        if not candidates:
+        resolver_cfg = cfg.get("resolver", {})
+        # P1-2: 替换覆盖全部探测域名（与探测口径一致，避免只换 github.com 其他域名仍走污染 DNS）
+        entries: Dict[str, list] = {}
+        ok_candidates = True
+        for tgt in targets:
+            cands = resolver.resolve_best(tgt, resolver_cfg)
+            if not cands:
+                ok_candidates = False
+                break
+            entries[tgt] = cands
+        if not ok_candidates or not entries:
             st["state"] = "degraded"
             st["last_error"] = "no valid IP candidates"
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
@@ -105,8 +115,9 @@ def run(config_path: str = "config.json") -> int:
             state.save(st_path, st)
             return 1
 
-        block = hosts_manager.build_block({targets[0]: candidates})
-        if not hosts_manager.apply_block(block, _backup_dir(cfg)):
+        block = hosts_manager.build_block(entries)
+        ok_apply, backup_path = hosts_manager.apply_block(block, _backup_dir(cfg))
+        if not ok_apply:
             st["state"] = "degraded"
             st["last_error"] = "hosts write failed (privilege/permission)"
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
@@ -117,30 +128,31 @@ def run(config_path: str = "config.json") -> int:
 
         st["state"] = "verifying"
         if not hosts_manager.verify_after_apply(targets, timeout):
-            # 自检失败 → 回滚 + degraded
-            backup = _backup_dir(cfg)
-            # 回滚用最近备份（apply 内部已生成）
+            # P0-1: 自检失败 → 立即回滚 + degraded（坏配置绝不留场）
+            hosts_manager.rollback(backup_path)
             st["state"] = "degraded"
-            st["last_error"] = "verify failed after apply"
+            st["last_error"] = "verify failed after apply, rolled back"
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
-                notifier.send(f"[ghlink] 自检失败已降级：{st['last_error']}", webhook)
+                notifier.send(f"[ghlink] 自检失败已回滚+降级：{st['last_error']}", webhook)
                 notifier.mark_alerted(st)
             state.save(st_path, st)
             return 1
 
-        # 5) 自愈成功
-        st["state"] = "normal"
-        st["current_ip"] = candidates[0]
+        # 5) 自愈成功：进入 verifying，需连续 verify_rounds 轮成功才 normal（P0-3）
+        st["state"] = "verifying"
+        st["verify_success"] = 1  # 本轮回滚自检已通过，算第一轮成功
+        first_ip = next(iter(entries.values()))[0]
+        st["current_ip"] = first_ip
         st["last_error"] = None
         st["history"] = (st.get("history") or [])[-19:]
         st["history"].append({
             "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "domain": targets[0],
-            "ip": candidates[0],
+            "domain": ",".join(targets),
+            "ip": first_ip,
             "trigger": f"{failed} consecutive failures",
         })
         if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
-            notifier.send(f"[ghlink] 已自动切换 IP {candidates[0]}（触发：连续 {failed} 次失败）", webhook)
+            notifier.send(f"[ghlink] 已自动切换 IP {first_ip}（触发：连续 {failed} 次失败）", webhook)
             notifier.mark_alerted(st)
         state.save(st_path, st)
         return 0

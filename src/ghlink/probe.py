@@ -12,6 +12,10 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List
 
+# P2: 禁用环境代理——探测必须走真实网络，避免经代理产生失真结果
+_NO_PROXY = urllib.request.ProxyHandler({})
+_OPENER = urllib.request.build_opener(_NO_PROXY)
+
 
 def probe_target(host: str, timeout_sec: float) -> Dict[str, object]:
     """对单域名探测，返回 {"ok": bool, "latency_ms": int, "error": str|None}。
@@ -34,7 +38,7 @@ def probe_target(host: str, timeout_sec: float) -> Dict[str, object]:
                     method="HEAD",
                     headers={"User-Agent": "ghlink/0.1"},
                 )
-                with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+                with _OPENER.open(req, timeout=timeout_sec) as resp:
                     ok = 200 <= resp.status < 400
                     return {"ok": ok, "latency_ms": tcp_ms, "error": None if ok else f"HTTP {resp.status}"}
         finally:

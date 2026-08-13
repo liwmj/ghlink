@@ -36,7 +36,8 @@ def _is_admin() -> bool:
 def ensure_privilege() -> bool:
     """检查/提升权限；失败返回 False，调用方走降级路径（只告警不替换）。
 
-    - Windows：非管理员时尝试 ShellExecuteW runas 提权重跑自身，失败返回 False
+    - Windows：非管理员时尝试 ShellExecuteW runas 提权重跑自身；提权进程启动成功后
+      旧进程立即退出（避免继续以非管理员身份执行造成虚假告警）；失败返回 False
     - Linux/macOS：非 root 时提示 sudo 重跑，返回 False
     """
     if _is_admin():
@@ -48,8 +49,10 @@ def ensure_privilege() -> bool:
             ret = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", sys.executable, params, None, 1
             )
-            # >32 表示成功启动提权进程
-            return ret > 32
+            if ret > 32:
+                # P1-1: 提权进程已启动，旧进程立即退出，避免双跑/虚假 degraded 告警
+                sys.exit(0)
+            return False
         except Exception:
             return False
     # Linux/macOS：无法自动提权（sudo 需要交互），返回 False 走降级
@@ -105,6 +108,11 @@ def backup_hosts(backup_dir: str = "backup") -> str:
         Path(backup_dir).mkdir(parents=True, exist_ok=True)
         ts = time.strftime("%Y%m%d%H%M%S")
         backup_path = os.path.join(backup_dir, f"hosts.{ts}.bak")
+        # P2: 同秒备份去重：若已存在则追加毫秒后缀
+        n = 0
+        while os.path.exists(backup_path):
+            n += 1
+            backup_path = os.path.join(backup_dir, f"hosts.{ts}.{n}.bak")
         shutil.copy2(hosts, backup_path)
         return backup_path
     except OSError:
