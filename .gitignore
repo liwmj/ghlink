@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+backup/
+ghlink_status.json
+ghlink.lock
+config.json
