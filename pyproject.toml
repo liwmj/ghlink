@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghlink"
+version = "0.1.0"
+description = "Self-healing connectivity for GitHub: monitors reachability, auto-resolves fresh IPs and updates hosts to restore access seamlessly. Zero third-party dependencies, cross-platform."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Mason Lee", email = "liwmj@outlook.com" }]
+keywords = ["github", "dns", "hosts", "self-healing", "network", "connectivity"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/liwmj/ghlink"
+Repository = "https://github.com/liwmj/ghlink"
+Documentation = "https://github.com/liwmj/ghlink/blob/master/README.md"
+Releases = "https://github.com/liwmj/ghlink/releases"
+
+[project.scripts]
+ghlink = "ghlink.main:main"
+
+[tool.setuptools]
+packages = ["ghlink"]
+
+[tool.setuptools.package-dir]
+ghlink = "src/ghlink"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

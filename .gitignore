@@ -6,3 +6,6 @@ ghlink_status.json
 ghlink.lock
 config.json
 ghlink_cache_*.json
+dist/
+build/
+*.egg-info/
