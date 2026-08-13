@@ -1,0 +1,28 @@
+{
+  "probe": {
+    "targets": ["github.com", "api.github.com", "codeload.github.com", "github.global.ssl.fastly.net"],
+    "timeout_sec": 5
+  },
+  "trigger": {
+    "consecutive_failures": 3,
+    "cooldown_min": 15,
+    "verify_success_rounds": 2
+  },
+  "resolver": {
+    "doh_sources": [
+      "https://dns.alidns.com/resolve",
+      "https://doh.pub/dns-query",
+      "https://cloudflare-dns.com/dns-query",
+      "https://dns.google/resolve"
+    ],
+    "cache_ttl_sec": 3600,
+    "max_candidates": 5
+  },
+  "notify": {
+    "enabled": true,
+    "feishu_webhook": ""
+  },
+  "state_file": "ghlink_status.json",
+  "lock_file": "ghlink.lock",
+  "hosts_backup_dir": "backup"
+}
