@@ -158,8 +158,8 @@
 
 - **单元测试**：`tests/` 10 文件 51 用例（config/probe/resolver/hosts/state/lock/notifier/e2e）
 - **mock 原则**：测试不依赖真实网络，网络调用全部 monkeypatch
-- **真机冒烟**：注入故障（写坏 hosts/超时）→ 验证触发/切换/回滚全链路
-- **跨平台矩阵**：macOS / Windows / Linux 三平台全量套件 + 冒烟
+- **真机冒烟**：注入故障（写坏 hosts/超时）→ 验证触发/切换/回滚全链路；已完成 Linux（Ubuntu）与 Windows（Server 2022）双平台冒烟，macOS 待补（2026-08-13）
+- **跨平台矩阵**：macOS / Windows / Linux 三平台全量套件 51 passed 全绿 + 双平台真机冒烟
 
 ## 8. 代码审查记录
 

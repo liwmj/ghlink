@@ -235,7 +235,9 @@ python -m ghlink.main config.json
 
 - **单元/集成测试**：`tests/` 目录，51 个用例覆盖配置/探测/解析/hosts/状态/锁/通知/全链路
 - **运行测试**：`python -m pytest tests/ -v`
-- **真机冒烟**：已在北京时间 2026-08-13 于 Linux（Ubuntu）完成全链路验证：注入故障 → 触发切换 → 写入 → 自检 → 回滚 → 锁接管 → 冷却防抖全部通过
+- **真机冒烟**：已完成三平台验证（2026-08-13）：
+  - Linux（Ubuntu）：注入故障 → 触发切换 → 写入 → 自检 → 回滚 → 锁接管 → 冷却防抖全链路通过
+  - Windows（Server 2022）：正常路径无感跳过 / E-004 降级（全源不可达保持原配置）/ 注入 127.0.0.1 → 自动切换 20.205.243.168 / 2 轮确认恢复 / 残留锁接管 + 并发跳过
 - **验证记录**：三平台（macOS / Windows / Linux）51 用例全绿 + 真机冒烟报告
 
 ---
@@ -245,7 +247,7 @@ python -m ghlink.main config.json
 | 平台 | 单测 | 真机冒烟 | 备注 |
 |------|------|----------|------|
 | macOS 13+ | ✅ 51 passed | 计划中 | Intel / Apple Silicon |
-| Windows 10/11 / Server | ✅ 51 passed | 计划中 | UAC 提权 / ipconfig flushdns |
+| Windows 10/11 / Server | ✅ 51 passed | ✅ 已完成 (2026-08-13) | UAC 提权 / ipconfig flushdns |
 | Linux (Ubuntu/Debian) | ✅ 51 passed | ✅ 已完成 | resolvectl / 备份恢复 |
 
 ---
@@ -261,7 +263,8 @@ python -m ghlink.main config.json
 
 ## 开发记录
 
-- 2026-08-13：立项（PJ-002）→ 架构设计 → 核心 9 模块实现 → 代码审查（P0/P1/P2 全修复）→ 测试套件合入（51 用例全绿）→ 三平台验证 → Release v0.1.0
+- 2026-08-13：立项（PJ-002）→ 架构设计 → 核心 9 模块实现 → 代码审查（P0/P1/P2 全修复）→ 测试套件合入（51 用例全绿）→ 三平台验证（macOS/Linux/Windows 51 passed）→ Linux + Windows 真机冒烟完成 → Release v0.1.0
+- 2026-08-13：Windows 真机冒烟完成，三平台矩阵全绿
 - 立项评估：A 级（优化 GitHub 网络链路，直接影响开发/同步效率与稳定性）
 
 ---
