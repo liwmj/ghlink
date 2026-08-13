@@ -13,8 +13,9 @@ BUILD_DIR="build/deb/${PKG_NAME}"
 
 echo "=== 构建 .deb（${PKG_NAME}） ==="
 
-# 0. 清理
-rm -rf "$BUILD_DIR" dist/ghlink_${VERSION}-1_all.deb 2>/dev/null || true
+# 0. 清理 + 建输出目录（拂晓复测 P1: 清理后必须重建 dist/）
+rm -rf "$BUILD_DIR" "dist/ghlink_${VERSION}-1_all.deb" 2>/dev/null || true
+mkdir -p dist
 mkdir -p "$BUILD_DIR/DEBIAN" \
          "$BUILD_DIR/usr/bin" \
          "$BUILD_DIR/usr/lib/ghlink" \
@@ -46,6 +47,10 @@ if [ ! -f "$BUILD_DIR/etc/ghlink/config.json" ]; then
     cp config.example.json "$BUILD_DIR/etc/ghlink/config.json"
 fi
 
-# 5. 打包
-dpkg-deb --build "$BUILD_DIR" "dist/ghlink_${VERSION}-1_all.deb" 2>&1 | tail -3
-echo "✅ 构建完成: dist/ghlink_${VERSION}-1_all.deb"
+# 5. 打包（拂晓复测 P1: 不用管道吞错误，失败必须退出非 0，CI 才能正确报错）
+OUT_DEB="dist/ghlink_${VERSION}-1_all.deb"
+if ! dpkg-deb --build "$BUILD_DIR" "$OUT_DEB" 2>&1; then
+    echo "❌ dpkg-deb 构建失败" >&2
+    exit 1
+fi
+echo "✅ 构建完成: $OUT_DEB"

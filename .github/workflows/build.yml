@@ -57,7 +57,7 @@ jobs:
         run: |
           pip install wheel
           python -m build --wheel
-          bash packaging/build_deb.sh 2>&1 | tail -5
+          bash packaging/build_deb.sh
       - uses: actions/upload-artifact@v4
         with:
           name: dist-linux
