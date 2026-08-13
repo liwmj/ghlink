@@ -105,8 +105,8 @@ def _is_enabled() -> bool:
             # Linux: systemd timer 或 crontab
             if os.path.exists("/etc/systemd/system/ghlink.timer"):
                 return True
-            r = platform_adapter._run_cmd(["crontab", "-l"])
-            return r
+            out = platform_adapter._run_cmd_output(["crontab", "-l"])
+            return "ghlink.main" in (out or "")
     except Exception:
         return False
 
