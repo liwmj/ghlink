@@ -87,3 +87,9 @@ tests/                   # 测试用例（小爪主责，拂晓辅助验证）
 
 - 2026-08-13：立项（PJ-002）→ 脚手架 v0.1 → 核心 9 模块实现 → 冒烟测试通过
 - D+3 评审（2026-08-16）：技术方案 + 测试用例 + 可跑版本对齐
+
+## 📦 下载与发布
+
+- **v0.1.0 Release**：https://github.com/liwmj/ghlink/releases/tag/v0.1.0
+- 源码包（tar.gz / zip）由 GitHub 自动生成，https 直链下载即可
+- 发布节奏：D+3 评审 → 修改合入 master → tag → Release → 链接更新
