@@ -9,3 +9,4 @@ ghlink_cache_*.json
 dist/
 build/
 *.egg-info/
+*.local.*
