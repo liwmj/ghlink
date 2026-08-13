@@ -51,10 +51,20 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     if sys.platform == "win32":
         try:
             import msvcrt
-            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+        except ImportError:
+            pass  # 平台不支持 → 回退 PID 文件方案
+        else:
             try:
-                # 单字节锁：锁定文件首字节，非阻塞获取
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+            except OSError:
+                yield False  # 锁文件不可打开，视为被占用，跳过本轮
+                return
+            try:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    yield False  # 锁被持有 → 跳过本轮（不排队不阻塞）
+                    return
                 os.lseek(fd, 0, os.SEEK_SET)
                 os.write(fd, f"{os.getpid()} {int(time.time())}".encode())
                 yield True
@@ -66,8 +76,6 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
                     pass
                 os.close(fd)
             return
-        except (ImportError, OSError):
-            pass  # 回退 PID 文件方案
 
     # 无 flock/msvcrt：PID 文件 + 残留接管（跨平台兜底）
     acquired = False
