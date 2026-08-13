@@ -10,7 +10,7 @@ class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
   url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.0.tar.gz"
-  sha256 "REPLACE_WITH_V0.2.0_SHA256"
+  sha256 "b28bb4c96f3bf282247617c0ef2260a857b7b2c5700d2949996a936198de26a1"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
 
@@ -21,7 +21,7 @@ class Ghlink < Formula
     libexec.install Dir["src/ghlink/*.py"] => "ghlink/"
     libexec.install "config.example.json"
 
-    # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）
+    # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}"
