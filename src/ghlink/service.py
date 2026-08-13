@@ -219,12 +219,16 @@ def _disable_macos() -> int:
 
 
 def _enable_windows() -> int:
-    cmd = (
-        f'schtasks /Create /TN "ghlink" /SC MINUTE /MO 1 '
-        f'/TR "{sys.executable} -m ghlink.main {_config_path()}" '
-        f'/RL HIGHEST /RU SYSTEM /F'
-    )
-    if not platform_adapter._run_cmd(cmd.split()):
+    # P1 修复（赛博 2026-08-14）：参数数组传递，不用 split() 拆命令串——
+    # /TR 的引号参数（含空格路径）必须作为单个元素，split() 会拆坏导致 schtasks 注册失败
+    tr = f'{sys.executable} -m ghlink.main {_config_path()}'
+    args = [
+        "schtasks", "/Create", "/TN", "ghlink",
+        "/SC", "MINUTE", "/MO", "1",
+        "/TR", tr,
+        "/RL", "HIGHEST", "/RU", "SYSTEM", "/F",
+    ]
+    if not platform_adapter._run_cmd(args):
         return 2
     print("[ghlink] 已启用值守（schtasks，1 分钟粒度，最高权限）")
     return 0
