@@ -1,13 +1,25 @@
 # PyInstaller spec: ghlink Windows exe（v0.2.0）
-# 构建: pyinstaller packaging/windows/ghlink.spec
+# 构建: pyinstaller packaging/windows/ghlink.spec --distpath dist/windows --workpath build/windows
 # 参考: v0.2 安装包技术方案草案（exe 线：PyInstaller + Inno Setup 安装向导）
+#
+# 修复记录（赛博实测反馈 2026-08-13）：
+# 1) 相对导入问题：main.py 用 `from . import`，需薄入口脚本 ghlink_entry.py
+# 2) script 路径：相对 spec 目录解析失败 → 用 SPECPATH 计算仓库根
+# 3) datas 路径：同样相对解析失败 → 绝对路径
+
+import sys
+from pathlib import Path
+
+# SPECPATH = packaging/windows/，仓库根 = 上两级
+ROOT = Path(SPECPATH).resolve().parent.parent
+SRC = ROOT / "src"
 
 a = Analysis(
-    ["src/ghlink/main.py"],
-    pathex=["src"],
+    [str(ROOT / "packaging" / "windows" / "ghlink_entry.py")],
+    pathex=[str(SRC)],
     binaries=[],
     datas=[
-        ("config.example.json", "."),
+        (str(ROOT / "config.example.json"), "."),
     ],
     hiddenimports=[],
     hookspath=[],
