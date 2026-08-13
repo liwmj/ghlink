@@ -96,6 +96,8 @@ def run(config_path: str = "config.json") -> int:
         st["state"] = "switching"
         st["switched_at"] = time.time()
         st["verify_success"] = 0
+        # 提醒2: 提权 exit 前先落盘 switching 状态（Windows runas 后旧进程退出不丢标记）
+        state.save(st_path, st)
         resolver_cfg = cfg.get("resolver", {})
         # P1-2: 替换覆盖全部探测域名（与探测口径一致，避免只换 github.com 其他域名仍走污染 DNS）
         entries: Dict[str, list] = {}
