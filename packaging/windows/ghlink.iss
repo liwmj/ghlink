@@ -28,7 +28,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 注：GitHub runner 的 Inno Setup 不带 ChineseSimplified.isl，安装向导暂用英文（Default.isl 内置）
+; 中文语言文件后续随资产附带（packaging/windows/ChineseSimplified.isl）
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
