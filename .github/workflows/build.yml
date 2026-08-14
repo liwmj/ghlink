@@ -55,7 +55,7 @@ jobs:
           python-version: "3.12"
       - name: Build deb
         run: |
-          pip install wheel
+          pip install wheel build
           python -m build --wheel
           bash packaging/build_deb.sh
       - uses: actions/upload-artifact@v4
