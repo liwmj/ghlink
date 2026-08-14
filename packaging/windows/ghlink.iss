@@ -75,7 +75,7 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "disable"; \
 ; 注意：用户 PATH 摘除在 [Code] CurUninstallStepChanged 中处理（Pascal 直接读写注册表，避免 shell 引号转义坑）
 
 [Code]
-// 卸载时确认提示
+// 卸载时确认提示（静默卸载 UninstallSilent 时不弹，否则阻塞自动化/CI）
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   PathValue: string;
@@ -83,8 +83,9 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    if MsgBox('确定卸载 ghlink 吗？配置文件和状态文件将保留在 %APPDATA%\ghlink。',
-      mbConfirmation, MB_YESNO) = IDNO then
+    if (not UninstallSilent) and
+      (MsgBox('确定卸载 ghlink 吗？配置文件和状态文件将保留在 %APPDATA%\ghlink。',
+        mbConfirmation, MB_YESNO) = IDNO) then
       Abort;
     // 精确摘除用户 PATH 中的 {app} 段（不整值清空，防 uninsdeletevalue 误删）
     AppPath := ExpandConstant('{app}');

@@ -209,8 +209,17 @@ def _update_domain_health(st: Dict[str, Any], targets: list, results: Dict[str, 
 
 
 def main() -> None:
-    """CLI 入口：支持子命令 run / enable / disable / status。"""
+    """CLI 入口：支持子命令 run / enable / disable / status / tray。"""
     import sys
+
+    # Windows 控制台默认 GBK，打印中文会 charmap 编码报错（W3 实测暴露）
+    # 统一强制 UTF-8 输出，errors=replace 兜底非法字符
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
 
     args = sys.argv[1:]
     # 无参数或首个参数不是子命令 → 兼容旧用法：当作 config 路径
