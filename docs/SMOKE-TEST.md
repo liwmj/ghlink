@@ -1,7 +1,8 @@
 # ghlink 真机冒烟记录（SMOKE-TEST）
 
-> 双平台真机验证：Ubuntu（拂晓执行）+ Windows Server 2022（赛博执行）
+> 三平台真机验证：Ubuntu（拂晓执行）+ Windows Server 2022（赛博执行）+ macOS（CI macos runner 自动化，2026-08-14）
 > 批准链: 方案（拂晓 v1.1 + 赛博 2 补充）→ 评审通过 → 李工批准 → 执行
+> macOS 补充：脚本 scripts/macos_smoke.sh 并进 CI（macos-smoke job，runner 自带 passwordless sudo），不再依赖人工授权
 
 ## Ubuntu（Linux，Python 3.12.3，master c85574a）
 基线: hosts 无 github 条目｜解析 20.205.243.166｜TCP443 连通正常

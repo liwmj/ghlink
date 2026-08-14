@@ -26,5 +26,11 @@
 - 权限 | UAC/管理员上下文 | ✅ ensure_privilege 行为记录
 - DNS 刷新 | ipconfig /flushdns | ✅ 恢复基线后执行成功
 
-## macOS（顾笙本机）
-- 51 passed 单测全绿（真机冒烟未跑，Ubuntu/Windows 双平台冒烟已覆盖机制验证）
+## macOS（CI macos runner，2026-08-14，run 31775934251）
+- ✅ ① 正常路径: EXIT 0 + hosts 零改动
+- ✅ ② 切换链路: 注入 127.0.0.1 → 触发切换 → 写入真实 IP 140.82.121.3 → 自检通过 → github.com HTTP 200
+- ✅ ③ 回滚兜底: 不可达 IP + 超短超时 → 自检失败 → 自动回滚 + degraded，坏配置不留场
+- ✅ ④ 锁残留: 死 PID 锁接管不阻塞
+- ✅ ⑤ 冷却防抖: 切换后冷却期内不重复切换（history=1）
+- ✅ 收尾: hosts 恢复基线无痕（PASS=8 FAIL=0）
+- 注：初跑暴露脚本循环 bug（初始 normal 态提前跳出），修复 19ba960 后全绿
