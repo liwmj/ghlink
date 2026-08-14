@@ -22,10 +22,11 @@ class Ghlink < Formula
     libexec.install "config.example.json"
 
     # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec
+    py = Formula["python@3.12"].opt_bin/"python3.12"
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}"
-      exec "#{Formula["python@3.12"].opt_bin}/python3" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
+      exec "#{py}" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
     EOS
     chmod 0755, bin/"ghlink"
 
