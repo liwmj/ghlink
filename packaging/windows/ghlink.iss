@@ -28,9 +28,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
-; 注：GitHub runner 的 Inno Setup 不带 ChineseSimplified.isl，安装向导暂用英文（Default.isl 内置）
-; 中文语言文件后续随资产附带（packaging/windows/ChineseSimplified.isl）
+; 中文语言文件随仓库自带（packaging/windows/ChineseSimplified.isl），不依赖 runner 内置
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Files]
 ; 主程序 + 配置文件（PyInstaller 产物 dist/windows/ghlink.exe）
