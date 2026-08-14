@@ -18,7 +18,7 @@ class Ghlink < Formula
 
   def install
     # 保持包结构安装到 libexec/ghlink/（解决 main.py 相对导入）
-    libexec.install Dir["src/ghlink/*.py"] => "ghlink/"
+    (libexec/"ghlink").install Dir["src/ghlink/*.py"]
     libexec.install "config.example.json"
 
     # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec
