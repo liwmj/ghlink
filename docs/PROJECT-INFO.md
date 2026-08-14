@@ -13,7 +13,7 @@
 | 仓库 | https://github.com/liwmj/ghlink |
 | 文件夹 | `zion/projects/[PJ-002 ghlink]/`（飞书云空间） |
 | 立项日 | 2026-08-13 |
-| 里程碑 | v0.1.0 已发布（2026-08-13）→ v0.2.0（目标 2-3 周） |
+| 里程碑 | v0.1.0 已发布（2026-08-13）→ v0.2.0 已发布（2026-08-14，Release 含 4 资产） |
 
 ## 角色承接（终裁版）
 
@@ -30,10 +30,10 @@
 
 | 阶段 | 内容 | 时间 |
 |------|------|------|
-| 阶段 1 | PyPI 上线（pyproject + console 入口 + enable/disable/status 三命令） | W1 |
-| 阶段 2 | 原生包三线（brew tap / .deb+Release / PyInstaller exe + Inno） | W1-W2 |
-| 并行 | 目标域名健康度管理 + GitHub520 兜底源 | W2-W3 |
-| 里程碑 | v0.2.0 Release（附三种安装包资产） | W3 |
+| 阶段 1 | PyPI 上线（pyproject + console 入口 + enable/disable/status 三命令） | W1 ✅ |
+| 阶段 2 | 原生包三线（brew tap / .deb+Release / PyInstaller exe + Inno） | W1-W2 ✅ |
+| 并行 | 目标域名健康度管理 + GitHub520 兜底源 | W2-W3 ✅（域名健康度） |
+| 里程碑 | v0.2.0 Release（附三种安装包资产） | W3 ✅（2026-08-14） |
 
 ## 验收标准
 
@@ -46,9 +46,9 @@
 | 项 | 值 |
 |----|----|
 | v0.1 状态 | ✅ 已收官（评审通过，Release v0.1.0 上线） |
-| v0.2 状态 | 🔄 阶段 1 进行中（pyproject/console 入口完成 975ab61，三命令开发中） |
-| 阻塞 | 无（PyPI 密码恢复中，不阻塞开发） |
-| 风险 | 低（v0.2 排期 W1-W3 可控） |
+| v0.2 状态 | ✅ 已发布（2026-08-14：域名健康度管理 + 三平台真机冒烟 + Production/Stable + Release 4 资产） |
+| 阻塞 | 无（PyPI 发布待李工账号/token，不阻塞其他） |
+| 风险 | 低 |
 
 ## 待办（飞书侧，不阻塞）
 
