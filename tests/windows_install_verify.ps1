@@ -98,4 +98,4 @@ Check "uninstall: user config preserved" (Test-Path $userCfg)
 
 Write-Host ""
 Write-Host "===== W3 结果: PASS=$($script:pass) FAIL=$($script:fail) ====="
-if ($script:fail -eq 0) { Write-Host "ALL GREEN ✅" } else { Write-Host "HAS FAILURES ❌"; exit 1 }
+if ($script:fail -eq 0) { Write-Host "ALL GREEN ✅"; exit 0 } else { Write-Host "HAS FAILURES ❌"; exit 1 }
