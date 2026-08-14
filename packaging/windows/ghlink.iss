@@ -53,7 +53,7 @@ Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Path"; \
 
 ; 托盘开机自启（用户级 Run key，随登录启动作 UI 载体）
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ghlink-tray"; \
-  ValueData: "\"{app}\ghlink.exe\" tray"; Flags: uninsdeletevalue; Tasks: autostart
+  ValueData: """{app}\ghlink.exe"" tray"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
 ; 安装后：勾选自启则注册值守（schtasks）
