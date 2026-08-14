@@ -1,7 +1,10 @@
 {
   "probe": {
     "targets": ["github.com", "api.github.com", "codeload.github.com", "github.global.ssl.fastly.net"],
-    "timeout_sec": 5
+    "timeout_sec": 5,
+    "core_targets": ["github.com", "api.github.com"],
+    "degrade_after_rounds": 10,
+    "recover_rounds": 2
   },
   "trigger": {
     "consecutive_failures": 3,

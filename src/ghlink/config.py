@@ -21,6 +21,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "github.global.ssl.fastly.net",
         ],
         "timeout_sec": 5,
+        # 目标域名健康度管理（v0.2）：长期不可达域名自动降级，核心域名优先保证切换成功
+        "core_targets": ["github.com", "api.github.com"],  # 核心域名永不降级
+        "degrade_after_rounds": 10,  # 非核心域名连续失败 N 轮 → 降级（1min 粒度 ≈ 10min）
+        "recover_rounds": 2,  # 降级域名连续成功 N 轮 → 恢复纳入
     },
     "trigger": {
         "consecutive_failures": 3,

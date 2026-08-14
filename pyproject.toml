@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Mason Lee", email = "liwmj@outlook.com" }]
 keywords = ["github", "dns", "hosts", "self-healing", "network", "connectivity"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",

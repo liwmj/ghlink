@@ -44,6 +44,7 @@
 - 🔍 **三层探测**：TCP 443 建连 → TLS 握手（SNI）→ HTTP HEAD，真实反映 GitHub 可用性
 - 🔄 **自动自愈**：连续 3 轮失败（默认）触发切换，写入新 IP 后自检，失败立即回滚
 - 🌐 **多源 IP 获取**：阿里/腾讯/Cloudflare/Google 四个 DoH 源 + 系统 DNS + 本地缓存，多数票 + TCP 443 预检，单源故障自动剔除
+- 🧠 **目标域名健康度管理**（v0.2）：非核心域名（如 codeload/fastly）长期不可达自动降级，从判定/自检集剔除，核心域名（github.com / api.github.com）永不降级优先保证切换成功；恢复后自动重新纳入
 - 🛡️ **安全红线**：写入前备份 hosts、写入后自检、自检失败回滚——**宁可不变，不能改坏**
 - ⏱️ **冷却防抖**：切换成功后 15 分钟冷却期，避免 IP 抖动导致频繁切换
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
@@ -179,6 +180,9 @@ python -m ghlink.main config.json
 |--------|------|--------|------|
 | `probe` | `targets` | github.com 等 4 域名 | 探测域名清单 |
 | `probe` | `timeout_sec` | 5 | 单域名探测超时 |
+| `probe` | `core_targets` | github.com / api.github.com | 核心域名（永不降级，优先保证切换成功） |
+| `probe` | `degrade_after_rounds` | 10 | 非核心域名连续失败 N 轮 → 降级（≈10min） |
+| `probe` | `recover_rounds` | 2 | 降级域名连续成功 N 轮 → 恢复纳入 |
 | `trigger` | `consecutive_failures` | 3 | 连续失败 N 轮触发切换 |
 | `trigger` | `cooldown_min` | 15 | 切换后冷却分钟数 |
 | `trigger` | `verify_success_rounds` | 2 | 自愈后连续成功轮数恢复 normal |
@@ -233,12 +237,13 @@ python -m ghlink.main config.json
 
 ## 测试与验证
 
-- **单元/集成测试**：`tests/` 目录，51 个用例覆盖配置/探测/解析/hosts/状态/锁/通知/全链路
+- **单元/集成测试**：`tests/` 目录，56 个用例覆盖配置/探测/解析/hosts/状态/锁/通知/全链路/域名健康度
 - **运行测试**：`python -m pytest tests/ -v`
-- **真机冒烟**：已完成三平台验证（2026-08-13）：
+- **真机冒烟**：已完成三平台验证（2026-08-14）：
   - Linux（Ubuntu）：注入故障 → 触发切换 → 写入 → 自检 → 回滚 → 锁接管 → 冷却防抖全链路通过
   - Windows（Server 2022）：正常路径无感跳过 / E-004 降级（全源不可达保持原配置）/ 注入 127.0.0.1 → 自动切换 20.205.243.168 / 2 轮确认恢复 / 残留锁接管 + 并发跳过
-- **验证记录**：三平台（macOS / Windows / Linux）51 用例全绿 + 真机冒烟报告
+  - macOS：本机故障注入全链路冒烟（正常路径/切换/回滚/锁/冷却）通过
+- **验证记录**：三平台（macOS / Windows / Linux）56 用例全绿 + 真机冒烟报告
 
 ---
 
@@ -246,18 +251,18 @@ python -m ghlink.main config.json
 
 | 平台 | 单测 | 真机冒烟 | 备注 |
 |------|------|----------|------|
-| macOS 13+ | ✅ 51 passed | 计划中 | Intel / Apple Silicon |
-| Windows 10/11 / Server | ✅ 51 passed | ✅ 已完成 (2026-08-13) | UAC 提权 / ipconfig flushdns |
-| Linux (Ubuntu/Debian) | ✅ 51 passed | ✅ 已完成 | resolvectl / 备份恢复 |
+| macOS 13+ | ✅ 56 passed | ✅ 已完成 (2026-08-14) | Intel / Apple Silicon |
+| Windows 10/11 / Server | ✅ 56 passed | ✅ 已完成 (2026-08-13) | UAC 提权 / ipconfig flushdns |
+| Linux (Ubuntu/Debian) | ✅ 56 passed | ✅ 已完成 | resolvectl / 备份恢复 |
 
 ---
 
 ## 路线图
 
 - [x] **v0.1.0**（2026-08-13）：核心自愈闭环 + 三平台单测全绿 + 双平台真机冒烟
-- [ ] **v0.2**：目标域名健康度管理（长期不可达域名自动降级，核心域名优先切换）
-- [ ] **v0.2**：平台便捷安装包（Windows exe / macOS dmg / Linux deb）
-- [ ] **v0.2**：历史切换统计与报表
+- [x] **v0.2.0**（2026-08-14）：目标域名健康度管理（长期不可达域名自动降级，核心域名优先切换）+ 三平台真机冒烟闭环 + 生产就绪（Production/Stable）
+- [ ] **v0.2.0**：平台便捷安装包发布（Windows exe / macOS brew / Linux deb / PyPI）
+- [ ] **v0.2.x**：历史切换统计与报表
 
 ---
 

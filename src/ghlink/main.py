@@ -63,8 +63,12 @@ def run(config_path: str = "config.json") -> int:
 
         # 1) 探测
         results = probe.probe_all(targets, timeout)
-        ok = probe.round_ok(results)
-        st["probe"]["targets"] = {h: {"ok": bool(r.get("ok"))} for h, r in results.items()}
+        # 目标域名健康度管理（v0.2）：更新每域名连续失败计数/降级状态
+        active = _update_domain_health(st, targets, results, cfg)
+        # 仅刷新 ok 字段，保留 fail_count/degraded/recover_count 等健康度字段
+        for h, r in results.items():
+            st["probe"]["targets"].setdefault(h, {})["ok"] = bool(r.get("ok"))
+        ok = probe.round_ok({h: r for h, r in results.items() if h in active})
 
         # 2) 计数判定：成功清零，失败累加
         if ok:
@@ -92,17 +96,17 @@ def run(config_path: str = "config.json") -> int:
             state.save(st_path, st)
             return 0
 
-        # 4) 达到阈值 → 自愈：对全部探测域名取 IP → 写 hosts → 自检
+        # 4) 达到阈值 → 自愈：对活跃探测域名取 IP → 写 hosts → 自检
         st["state"] = "switching"
         st["switched_at"] = time.time()
         st["verify_success"] = 0
         # 提醒2: 提权 exit 前先落盘 switching 状态（Windows runas 后旧进程退出不丢标记）
         state.save(st_path, st)
         resolver_cfg = cfg.get("resolver", {})
-        # P1-2: 替换覆盖全部探测域名（与探测口径一致，避免只换 github.com 其他域名仍走污染 DNS）
+        # P1-2: 替换覆盖全部活跃探测域名（降级域名不写入，避免坏域名拖累切换）
         entries: Dict[str, list] = {}
         ok_candidates = True
-        for tgt in targets:
+        for tgt in active:
             cands = resolver.resolve_best(tgt, resolver_cfg)
             if not cands:
                 ok_candidates = False
@@ -129,7 +133,7 @@ def run(config_path: str = "config.json") -> int:
             return 1
 
         st["state"] = "verifying"
-        if not hosts_manager.verify_after_apply(targets, timeout):
+        if not hosts_manager.verify_after_apply(active, timeout):
             # P0-1: 自检失败 → 立即回滚 + degraded（坏配置绝不留场）
             hosts_manager.rollback(backup_path)
             st["state"] = "degraded"
@@ -150,7 +154,7 @@ def run(config_path: str = "config.json") -> int:
         st["history"] = (st.get("history") or [])[-19:]
         st["history"].append({
             "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "domain": ",".join(targets),
+            "domain": ",".join(active),
             "ip": first_ip,
             "trigger": f"{failed} consecutive failures",
         })
@@ -159,6 +163,49 @@ def run(config_path: str = "config.json") -> int:
             notifier.mark_alerted(st)
         state.save(st_path, st)
         return 0
+
+
+def _update_domain_health(st: Dict[str, Any], targets: list, results: Dict[str, Any], cfg: Dict[str, Any]) -> list:
+    """目标域名健康度管理（v0.2）。
+
+    规则：
+    - 核心域名（probe.core_targets）永不降级
+    - 非核心域名连续失败 degrade_after_rounds 轮 → 标记 degraded（从探测判定集/自检集剔除）
+    - 降级域名连续成功 recover_rounds 轮 → 恢复纳入
+    返回本轮活跃（未降级）域名列表。
+    """
+    probe_cfg = cfg.get("probe", {})
+    core = set(probe_cfg.get("core_targets", ["github.com", "api.github.com"]))
+    degrade_after = int(probe_cfg.get("degrade_after_rounds", 10) or 10)
+    recover_rounds = int(probe_cfg.get("recover_rounds", 2) or 2)
+
+    per = st.setdefault("probe", {}).setdefault("targets", {})
+    active = []
+    for t in targets:
+        entry = per.setdefault(t, {"ok": False, "fail_count": 0, "degraded": False, "recover_count": 0})
+        r = results.get(t, {})
+        ok = bool(r.get("ok"))
+        entry["ok"] = ok
+        if ok:
+            if entry.get("degraded"):
+                entry["recover_count"] = entry.get("recover_count", 0) + 1
+                if entry["recover_count"] >= recover_rounds:
+                    entry["degraded"] = False
+                    entry["recover_count"] = 0
+                    entry["fail_count"] = 0
+            else:
+                entry["fail_count"] = 0
+        else:
+            entry["recover_count"] = 0
+            if t in core:
+                entry["fail_count"] = entry.get("fail_count", 0) + 1  # 核心域名记录但不降级
+            else:
+                entry["fail_count"] = entry.get("fail_count", 0) + 1
+                if entry["fail_count"] >= degrade_after:
+                    entry["degraded"] = True
+        if not entry.get("degraded"):
+            active.append(t)
+    return active
 
 
 def main() -> None:

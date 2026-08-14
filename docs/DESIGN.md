@@ -1,6 +1,6 @@
 # ghlink 设计文档（DESIGN）
 
-> 版本：v0.1.0 ｜ 最后更新：2026-08-13 ｜ 状态：✅ 已实现并通过三平台验证
+> 版本：v0.2.0 ｜ 最后更新：2026-08-14 ｜ 状态：✅ 已实现并通过三平台验证（生产就绪）
 
 ## 1. 背景与目标
 
@@ -157,10 +157,10 @@
 
 ## 7. 测试策略
 
-- **单元测试**：`tests/` 10 文件 51 用例（config/probe/resolver/hosts/state/lock/notifier/e2e）
+- **单元测试**：`tests/` 11 文件 56 用例（config/probe/resolver/hosts/state/lock/notifier/e2e/domain-health）
 - **mock 原则**：测试不依赖真实网络，网络调用全部 monkeypatch
-- **真机冒烟**：注入故障（写坏 hosts/超时）→ 验证触发/切换/回滚全链路；已完成 Linux（Ubuntu）与 Windows（Server 2022）双平台冒烟，macOS 待补（2026-08-13）
-- **跨平台矩阵**：macOS / Windows / Linux 三平台全量套件 51 passed 全绿 + 双平台真机冒烟
+- **真机冒烟**：注入故障（写坏 hosts/超时）→ 验证触发/切换/回滚全链路；已完成 Linux（Ubuntu）、Windows（Server 2022）、macOS 三平台冒烟
+- **跨平台矩阵**：macOS / Windows / Linux 三平台全量套件 56 passed 全绿 + 三平台真机冒烟
 
 ## 8. 代码审查记录
 
@@ -168,5 +168,5 @@
 
 ## 9. 已知边界与 v0.2 规划
 
-- **目标域名健康度管理**（v0.2）：长期不可达域名（如 codeload/fastly 在某些网络）从自检集自动降级，核心域名优先保证切换成功
-- **便捷安装包**（v0.2）：Windows exe / macOS dmg / Linux deb
+- ~~**目标域名健康度管理**~~（✅ v0.2 已实现 2026-08-14）：长期不可达域名（如 codeload/fastly 在某些网络）从自检集自动降级，核心域名（probe.core_targets）优先保证切换成功；非核心域名连续失败 degrade_after_rounds 轮降级、连续成功 recover_rounds 轮恢复，核心域名永不降级
+- **便捷安装包**（v0.2）：Windows exe / macOS dmg / Linux deb（安装包发布链路见 CI 工作流）
