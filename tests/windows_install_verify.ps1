@@ -84,7 +84,15 @@ $runVal2 = Get-ItemProperty -Path $runKey -Name "ghlink-tray" -ErrorAction Silen
 Check "uninstall: Run key removed" ($null -eq $runVal2)
 $userPathAfter = [Environment]::GetEnvironmentVariable("Path", "User")
 Check "uninstall: PATH ghlink removed" ($userPathAfter -notlike "*$appDir*")
-Check "uninstall: user PATH not whole-value wiped" (($null -ne $userPathAfter) -and ($userPathAfter.Length -gt 0) -and ($userPathAfter -eq $userPathBefore))
+# 「不被整值清空」= 卸载后 PATH 仍非空，且段集合与安装前一致（Inno {olddata} 写入可能有分号规范化差异，逐字符相等过于严格）
+$beforeSegs = @($userPathBefore -split ';' | Where-Object { $_.Trim() -ne '' })
+$afterSegs  = @($userPathAfter -split ';' | Where-Object { $_.Trim() -ne '' })
+$segOk = ($null -ne $userPathAfter) -and ($userPathAfter.Length -gt 0) -and ($afterSegs.Count -eq $beforeSegs.Count) -and ((Compare-Object $beforeSegs $afterSegs) -eq $null)
+if (-not $segOk) {
+  Write-Host "  PATH before: [$userPathBefore]"
+  Write-Host "  PATH after:  [$userPathAfter]"
+}
+Check "uninstall: user PATH not whole-value wiped (segment set preserved)" $segOk
 # 用户 config 保留（卸载不清用户数据）
 Check "uninstall: user config preserved" (Test-Path $userCfg)
 
