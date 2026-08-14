@@ -24,7 +24,8 @@ $exe = "$appDir\ghlink.exe"
 $unins = "$appDir\unins000.exe"
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $silent = @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=install.log")
-$taskArgs = $silent + @("/TASKS=autostart,desktopicon")
+# 默认不自启（李工 15:29 定规）：全新安装不勾选 autostart
+$taskArgs = $silent + @("/TASKS=desktopicon")
 $userPathBefore = [Environment]::GetEnvironmentVariable("Path", "User")
 
 #### --- 裸 exe 冒烟 ---
@@ -38,7 +39,9 @@ Check "fresh install: exe deployed" (Test-Path $exe)
 Check "fresh install: config.example.json" (Test-Path "$appDir\config.example.json")
 Check "fresh install: uninstaller present" (Test-Path $unins)
 $runVal = (Get-ItemProperty -Path $runKey -Name "ghlink-tray" -ErrorAction SilentlyContinue)
-Check "fresh install: Run key ghlink-tray" ($null -ne $runVal)
+Check "fresh install: Run key ghlink-tray absent (default no autostart)" ($null -eq $runVal)
+schtasks /Query /TN ghlink *> $null
+Check "fresh install: schtasks absent (default no autostart)" ($LASTEXITCODE -ne 0)
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 Check "fresh install: PATH updated" ($userPath -like "*$appDir*")
 & $exe status *> $null
