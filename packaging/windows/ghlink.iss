@@ -7,7 +7,7 @@
 #define MyAppVersion "0.2.0"
 #define MyAppPublisher "Mason Lee"
 #define MyAppExeName "ghlink.exe"
-#define MyAppId "{B7E3C9A1-2F4D-4A6E-9C81-0D1F2B3C4D5E}"
+#define MyAppId "{{B7E3C9A1-2F4D-4A6E-9C81-0D1F2B3C4D5E}"
 
 [Setup]
 AppId={#MyAppId}
