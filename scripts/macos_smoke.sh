@@ -97,7 +97,9 @@ inject 127.0.0.1
 for i in 1 2 3 4 5; do
   $RUN >/dev/null 2>&1; rc=$?
   s=$(st "$TMP/state.json")
-  [ "$s" = "verifying" ] || [ "$s" = "normal" ] && break
+  # 注意：初始态就是 normal，不能以 normal 提前跳出；只等 switching/verifying
+  [ "$s" = "verifying" ] && break
+  [ "$s" = "switching" ] && break
 done
 if grep -q "ghlink Start" "$HOSTS" && ! grep -q "127.0.0.1 github.com" "$HOSTS"; then
   ip=$(grep "github.com" "$HOSTS" | grep -v "^#" | head -1 | awk '{print $1}')
@@ -148,7 +150,8 @@ inject 127.0.0.1
 for i in 1 2 3 4; do
   $RUN_COOL >/dev/null 2>&1
   s=$(st "$TMP/cool-state.json")
-  [ "$s" = "verifying" ] || [ "$s" = "normal" ] && break
+  [ "$s" = "verifying" ] && break
+  [ "$s" = "switching" ] && break
 done
 h1=$(python3 -c "import json;print(len(json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
 inject 127.0.0.1
