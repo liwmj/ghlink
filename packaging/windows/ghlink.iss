@@ -72,18 +72,27 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "status"; \
 ; 卸载前停用值守（清理计划任务）与托盘自启项
 Filename: "{app}\{#MyAppExeName}"; Parameters: "disable"; \
   Flags: runhidden; RunOnceId: "ghlink-disable"
-; 精确摘除用户 PATH 中的 {app} 段（不整值清空）
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command \"$p=[Environment]::GetEnvironmentVariable('Path','User'); if($p){$p=($p -split ';' | Where-Object {$_ -ne '{app}'}) -join ';'; [Environment]::SetEnvironmentVariable('Path',$p,'User')}\""; \
-  Flags: runhidden; RunOnceId: "ghlink-unpath"
+; 注意：用户 PATH 摘除在 [Code] CurUninstallStepChanged 中处理（Pascal 直接读写注册表，避免 shell 引号转义坑）
 
 [Code]
 // 卸载时确认提示
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  PathValue: string;
+  AppPath: string;
 begin
   if CurUninstallStep = usUninstall then
   begin
     if MsgBox('确定卸载 ghlink 吗？配置文件和状态文件将保留在 %APPDATA%\ghlink。',
       mbConfirmation, MB_YESNO) = IDNO then
       Abort;
+    // 精确摘除用户 PATH 中的 {app} 段（不整值清空，防 uninsdeletevalue 误删）
+    AppPath := ExpandConstant('{app}');
+    if RegQueryStringValue(HKCU, 'Environment', 'Path', PathValue) then
+    begin
+      StringChangeEx(PathValue, AppPath + ';', '', True);
+      StringChangeEx(PathValue, AppPath, '', True);
+      RegWriteStringValue(HKCU, 'Environment', 'Path', PathValue);
+    end;
   end;
 end;
