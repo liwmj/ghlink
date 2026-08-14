@@ -91,8 +91,16 @@ begin
     AppPath := ExpandConstant('{app}');
     if RegQueryStringValue(HKCU, 'Environment', 'Path', PathValue) then
     begin
+      // 先摘带分号的前缀/后缀形式，再摘裸路径，最后清理残留空段与首尾分号
       StringChangeEx(PathValue, AppPath + ';', '', True);
+      StringChangeEx(PathValue, ';' + AppPath, '', True);
       StringChangeEx(PathValue, AppPath, '', True);
+      while Pos(';;', PathValue) > 0 do
+        StringChangeEx(PathValue, ';;', ';', True);
+      if (Length(PathValue) > 0) and (PathValue[1] = ';') then
+        Delete(PathValue, 1, 1);
+      if (Length(PathValue) > 0) and (PathValue[Length(PathValue)] = ';') then
+        Delete(PathValue, Length(PathValue), 1);
       RegWriteStringValue(HKCU, 'Environment', 'Path', PathValue);
     end;
   end;
