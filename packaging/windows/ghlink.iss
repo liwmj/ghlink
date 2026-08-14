@@ -48,8 +48,10 @@ Name: "autostart"; Description: "开机自动启用值守（ghlink enable，推�
 
 [Registry]
 ; 注册 ghlink 到 PATH（用户级）
+; 注意：不能用 uninsdeletevalue —— 那会在卸载时清空整个用户 PATH（小爪 W3 watch 点②）
+; 卸载时改由 [UninstallRun] powershell 精确摘除 {app} 段
 Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Path"; \
-  ValueData: "{olddata};{app}"; Flags: preservestringtype uninsdeletevalue
+  ValueData: "{olddata};{app}"; Flags: preservestringtype
 
 ; 托盘开机自启（用户级 Run key，随登录启动作 UI 载体）
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ghlink-tray"; \
@@ -70,6 +72,9 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "status"; \
 ; 卸载前停用值守（清理计划任务）与托盘自启项
 Filename: "{app}\{#MyAppExeName}"; Parameters: "disable"; \
   Flags: runhidden; RunOnceId: "ghlink-disable"
+; 精确摘除用户 PATH 中的 {app} 段（不整值清空）
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command \"$p=[Environment]::GetEnvironmentVariable('Path','User'); if($p){$p=($p -split ';' | Where-Object {$_ -ne '{app}'}) -join ';'; [Environment]::SetEnvironmentVariable('Path',$p,'User')}\""; \
+  Flags: runhidden; RunOnceId: "ghlink-unpath"
 
 [Code]
 // 卸载时确认提示
