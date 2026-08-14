@@ -63,14 +63,13 @@ Check "re-enable: schtasks back" ($LASTEXITCODE -eq 0)
 $userCfg = "$env:APPDATA\ghlink\config.json"
 New-Item -ItemType Directory -Force -Path "$env:APPDATA\ghlink" | Out-Null
 Set-Content -Path $userCfg -Value '{"user_marker":"keep-me"}' -Encoding UTF8
-# 记录升级前 exe 时间戳，验证升级后 exe 被替换
-$exeBefore = (Get-Item $exe).LastWriteTimeUtc
-Start-Sleep -Seconds 2
+# 覆盖升级验证：升级后 exe 文件 hash 应与 artifact 裸 exe 一致（时间戳不可靠：Inno 保留打包时间戳）
+$artifactExeHash = (Get-FileHash $bareExe.FullName -Algorithm SHA256).Hash
 $p2 = Start-Process -FilePath $installer.FullName -ArgumentList $taskArgs -Wait -PassThru
 Check "upgrade: exit 0" ($p2.ExitCode -eq 0)
 Check "upgrade: exe intact" (Test-Path $exe)
-$exeAfter = (Get-Item $exe).LastWriteTimeUtc
-Check "upgrade: exe replaced" ($exeAfter -gt $exeBefore)
+$exeHashAfter = (Get-FileHash $exe -Algorithm SHA256).Hash
+Check "upgrade: exe hash matches artifact" ($exeHashAfter -eq $artifactExeHash)
 Check "upgrade: user config kept" ((Test-Path $userCfg) -and ((Get-Content $userCfg -Raw) -like "*keep-me*"))
 
 #### ========== Phase 4: 卸载清理 ==========
