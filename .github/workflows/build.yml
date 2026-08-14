@@ -35,11 +35,16 @@ jobs:
         run: |
           pip install pyinstaller
           pyinstaller packaging/windows/ghlink.spec --distpath dist/windows --workpath build/windows
-      - name: Build Inno installer
+      - name: Build Inno installer (installer.exe)
+        shell: pwsh
         run: |
-          # iscc 需要 Inno Setup；GitHub runner 无预装，用 chocolatey 装或跳过（v0.2 先出 exe）
-          # choco install innosetup -y 2>$null
-          echo "Inno Setup installer build: optional in v0.2"
+          choco install innosetup -y --no-progress
+          $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+          iscc packaging/windows/ghlink.iss
+      - name: Rename installer asset
+        shell: pwsh
+        run: |
+          Get-ChildItem dist/windows/ghlink-setup-*.exe | Rename-Item -NewName "ghlink-installer-$env:GITHUB_REF_NAME.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: dist-windows

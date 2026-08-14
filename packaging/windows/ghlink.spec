@@ -21,7 +21,7 @@ a = Analysis(
     datas=[
         (str(ROOT / "config.example.json"), "."),
     ],
-    hiddenimports=[],
+    hiddenimports=["pystray", "PIL", "PIL._tkinter_finder"],  # 托盘依赖（仅安装包注入，核心零依赖）
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

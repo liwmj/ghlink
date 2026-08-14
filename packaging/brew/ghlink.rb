@@ -21,11 +21,14 @@ class Ghlink < Formula
     (libexec/"ghlink").install Dir["src/ghlink/*.py"]
     libexec.install "config.example.json"
 
-    # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec
+    # 托盘依赖（pystray + Pillow）仅注入安装包：pip 装到 libexec/vendor，核心源码保持零依赖
     py = Formula["python@3.12"].opt_bin/"python3.12"
+    system py, "-m", "pip", "install", "--target", libexec/"vendor", "--quiet", "pystray", "Pillow"
+
+    # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec + vendor
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
-      export PYTHONPATH="#{libexec}"
+      export PYTHONPATH="#{libexec}:#{libexec}/vendor"
       exec "#{py}" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
     EOS
     chmod 0755, bin/"ghlink"

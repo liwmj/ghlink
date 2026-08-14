@@ -227,16 +227,20 @@ def main() -> None:
         sys.exit(service.disable())
     if first == "status":
         sys.exit(service.status())
+    if first == "tray":
+        from . import tray
+        sys.exit(tray.main())
     if first in ("--version", "-V"):
         from . import __version__
         print(f"ghlink {__version__}")
         sys.exit(0)
     if first in ("--help", "-h"):
-        print("用法: ghlink [run|enable|disable|status] [config.json]")
+        print("用法: ghlink [run|enable|disable|status|tray] [config.json]")
         print("  run      单轮探测+自愈（默认，可省略）")
         print("  enable   注册定时任务（1 分钟粒度，需管理员/root）")
         print("  disable  移除定时任务")
         print("  status   显示当前状态与值守情况")
+        print("  tray     系统托盘（Windows/macOS，需安装包版；Linux 纯 CLI）")
         sys.exit(0)
     # 兼容旧用法：直接传 config 路径
     sys.exit(run(first))

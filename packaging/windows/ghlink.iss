@@ -1,7 +1,7 @@
-; Inno Setup 安装器脚本: ghlink Windows exe（v0.2.0）
+; Inno Setup 安装器脚本: ghlink Windows（v0.2.0）
 ; 构建: iscc packaging/windows/ghlink.iss
 ; 参考: v0.2 安装包技术方案草案（exe 线：PyInstaller + Inno 安装向导）
-; 特性: 图形安装向导 + Program Files + PATH + 开始菜单 + 卸载项 + 默认不自启
+; 特性: 图形安装向导 + Program Files + PATH + 开始菜单 + 卸载项 + 开机自启选项（默认勾选）
 
 #define MyAppName "ghlink"
 #define MyAppVersion "0.2.0"
@@ -43,19 +43,30 @@ Name: "{autodesktop}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopi
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
+Name: "autostart"; Description: "开机自动启用值守（ghlink enable，推荐）"; GroupDescription: "附加任务:"; Flags: checkedonce
 
 [Registry]
 ; 注册 ghlink 到 PATH（用户级）
 Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Path"; \
   ValueData: "{olddata};{app}"; Flags: preservestringtype uninsdeletevalue
 
+; 托盘开机自启（用户级 Run key，随登录启动作 UI 载体）
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ghlink-tray"; \
+  ValueData: "\"{app}\ghlink.exe\" tray"; Flags: uninsdeletevalue; Tasks: autostart
+
 [Run]
-; 安装后可选：启动 ghlink status 查看状态（不自动值守，opt-in）
+; 安装后：勾选自启则注册值守（schtasks）
+Filename: "{app}\{#MyAppExeName}"; Parameters: "enable"; \
+  Description: "启用 ghlink 值守（开机自启）"; Flags: nowait postinstall skipifsilent; Tasks: autostart
+; 启动托盘
+Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"; \
+  Description: "启动 ghlink 托盘"; Flags: nowait postinstall skipifsilent
+; 可选：查看状态
 Filename: "{app}\{#MyAppExeName}"; Parameters: "status"; \
   Description: "查看 ghlink 状态"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; 卸载前停用值守（清理计划任务）
+; 卸载前停用值守（清理计划任务）与托盘自启项
 Filename: "{app}\{#MyAppExeName}"; Parameters: "disable"; \
   Flags: runhidden; RunOnceId: "ghlink-disable"
 

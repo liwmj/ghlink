@@ -169,4 +169,5 @@
 ## 9. 已知边界与 v0.2 规划
 
 - ~~**目标域名健康度管理**~~（✅ v0.2 已实现 2026-08-14）：长期不可达域名（如 codeload/fastly 在某些网络）从自检集自动降级，核心域名（probe.core_targets）优先保证切换成功；非核心域名连续失败 degrade_after_rounds 轮降级、连续成功 recover_rounds 轮恢复，核心域名永不降级
-- **便捷安装包**（v0.2）：Windows exe / macOS dmg / Linux deb（安装包发布链路见 CI 工作流）
+- ~~**便捷安装包**~~（✅ v0.2 已实现 2026-08-14）：Windows installer.exe（Inno 向导，含自启选项）+ 裸 exe 绿色版并存；Linux .deb；macOS 仅 brew（dmg 砍掉）；PyPI 发布链就绪
+- **系统托盘**（v0.2.x 规划，2026-08-14 立项）：pystray 一套 API 支持 Windows + macOS，Linux 纯 CLI 不做；托盘=UI 载体（绿/黄/红/灰状态图标、悬停摘要、右键菜单、气泡通知），值守开关复用 enable/disable 通道；安装后默认自启（Windows Inno 默认勾选 + Run key；macOS brew 随登录 LaunchAgent），右键菜单带开关；依赖只进安装包，核心保持零依赖；退出托盘≠停止值守
