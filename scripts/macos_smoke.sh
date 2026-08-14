@@ -4,7 +4,8 @@
 # 安全：全程备份 /etc/hosts，trap 保证任何退出路径都恢复基线；ghlink 段落式写入幂等。
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(dirname "$SCRIPT_DIR")"
+# CI（GitHub Actions macos runner）可用 $GITHUB_WORKSPACE 显式覆盖；本地自动反推仓库根
+REPO="${REPO:-$(dirname "$SCRIPT_DIR")}"
 PY="$REPO/.venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 cd "$REPO" || exit 9

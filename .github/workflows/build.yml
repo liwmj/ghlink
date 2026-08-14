@@ -86,6 +86,21 @@ jobs:
           ghlink --version
           ghlink status
 
+  macos-smoke:
+    name: macOS real-machine smoke (hosts switch/rollback)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run real-machine smoke
+        run: |
+          export REPO="$GITHUB_WORKSPACE"
+          sudo bash scripts/macos_smoke.sh
+        env:
+          REPO: ${{ github.workspace }}
+
   release:
     name: Attach to GitHub Release
     needs: [build-sdist, build-windows, build-linux]
