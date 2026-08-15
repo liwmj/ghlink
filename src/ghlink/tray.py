@@ -92,7 +92,14 @@ def _make_icon(color: str, size: int = 64):
     if path:
         try:
             icon = Image.open(path).convert("RGBA")
-            img = icon.resize((size, size), Image.LANCZOS)
+            # contain 居中：保持比例不变形（横版图标贴入方形画布）
+            icon.thumbnail((size, size), Image.LANCZOS)
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            img.paste(
+                icon,
+                ((size - icon.width) // 2, (size - icon.height) // 2),
+                icon,
+            )
         except Exception:
             img = None
     if img is None:  # 回退：纯色圆角 + 中心 G
