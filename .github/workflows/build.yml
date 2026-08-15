@@ -67,12 +67,16 @@ jobs:
         run: |
           set -e
           # 方案①（李工 17:23 拍板，17:27 确认主流）：Release 托管 apt 源，trusted=yes 免签名
+          # 赛博 17:36 实测修复：GitHub Release 资产在根目录，Packages 的 Filename 必须去掉 pool/main/ 前缀，
+          # 否则 apt install 按 Filename 拼 URL → 404（v0.2.2 的坑，v0.2.3 修）
           mkdir -p apt-repo/pool/main
           cp dist/*.deb apt-repo/pool/main/
           cd apt-repo
-          apt-ftparchive packages pool/ > Packages
+          apt-ftparchive packages pool/ | sed 's|^Filename: pool/main/|Filename: |' > Packages
           gzip -k -f Packages
           apt-ftparchive release . > Release
+          # 校验：Filename 无 pool/main 前缀
+          grep '^Filename:' Packages
           ls -la . pool/main/
       - uses: actions/upload-artifact@v4
         with:
