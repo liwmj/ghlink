@@ -11,9 +11,8 @@
 - E-007 告警通道故障 → 自愈仍完成（告警不阻断主流程）
 - 时间类断言（探测期 180s / 自愈期 60s）属实跑矩阵，见 PLATFORM_MATRIX.md
 """
-import json
 
-import pytest
+import json
 
 from ghlink import main
 
@@ -45,8 +44,12 @@ class TestFullCycle:
             },
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         monkeypatch.setattr("ghlink.notifier.send", lambda message, url: True)
         # 第 1-3 轮持续失败 → 第 3 轮触发切换
         for _ in range(3):
@@ -69,7 +72,10 @@ class TestFullCycle:
         monkeypatch.setattr("ghlink.probe.probe_all", flaky_probe)
         applied = []
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: applied.append(block) or (True, backup_dir))
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir: applied.append(block) or (True, backup_dir),
+        )
         for _ in range(4):
             main.run(cfg_path)
         assert applied == []  # 从未触发切换
@@ -79,11 +85,16 @@ class TestFullCycle:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            lambda targets, timeout: {t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets},
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: [])
         applied = []
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: applied.append(block) or (True, backup_dir))
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir: applied.append(block) or (True, backup_dir),
+        )
         for _ in range(3):
             main.run(cfg_path)
         assert applied == []  # 没有可用 IP，绝不写入
@@ -93,12 +104,18 @@ class TestFullCycle:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            lambda targets, timeout: {t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets},
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
         alerts = []
-        monkeypatch.setattr("ghlink.notifier.send", lambda message, url: alerts.append(message) or True)
+        monkeypatch.setattr(
+            "ghlink.notifier.send", lambda message, url: alerts.append(message) or True
+        )
         for _ in range(8):  # 模拟冷却期内的多次运行
             main.run(cfg_path)
         assert len(alerts) <= 1  # 切换 1 次只发 1 条
@@ -108,10 +125,14 @@ class TestFullCycle:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            lambda targets, timeout: {t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets},
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
         monkeypatch.setattr("ghlink.notifier.send", lambda message, url: False)  # 告警失败
         code = main.run(cfg_path)
         assert code in (0, 1)  # 不因告警失败而崩
@@ -121,12 +142,12 @@ class TestFullCycle:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            lambda targets, timeout: {t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets},
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr(
-            "ghlink.platform_adapter.ensure_privilege", lambda: False
-        )
+        monkeypatch.setattr("ghlink.platform_adapter.ensure_privilege", lambda: False)
         for _ in range(3):  # 3 轮失败触发切换 → apply_block 提权失败 → degraded
             code = main.run(cfg_path)
         assert code in (0, 1)

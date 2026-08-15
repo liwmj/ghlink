@@ -4,9 +4,8 @@
 - Linux 平台：main() 返回 0（纯 CLI 提示，不阻塞）
 - 状态文本/图标颜色映射正确
 """
-import json
 
-import pytest
+import json
 
 from ghlink import tray
 

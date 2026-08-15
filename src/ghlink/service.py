@@ -10,10 +10,10 @@
 - Linux/macOS 需 root；Windows 用 /RL HIGHEST /RU SYSTEM 绕 UAC
 - 提权/注册失败：明确报错退出码 2，不静默
 """
+
 import os
 import sys
 import time
-from typing import Dict, Any
 
 from . import platform_adapter, state
 
@@ -42,7 +42,11 @@ def _service_name() -> str:
 def enable() -> int:
     """注册定时任务。返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
-        print("[ghlink] 错误：需要管理员/root 权限。请运行 sudo ghlink enable（Linux/macOS）或管理员命令行（Windows）", file=sys.stderr)
+        print(
+            "[ghlink] 错误：需要管理员/root 权限。"
+            "请运行 sudo ghlink enable（Linux/macOS）或管理员命令行（Windows）",
+            file=sys.stderr,
+        )
         return 2
     try:
         if sys.platform == "win32":
@@ -59,7 +63,11 @@ def enable() -> int:
 def disable() -> int:
     """移除定时任务。返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
-        print("[ghlink] 错误：需要管理员/root 权限。请运行 sudo ghlink disable（Linux/macOS）或管理员命令行（Windows）", file=sys.stderr)
+        print(
+            "[ghlink] 错误：需要管理员/root 权限。"
+            "请运行 sudo ghlink disable（Linux/macOS）或管理员命令行（Windows）",
+            file=sys.stderr,
+        )
         return 2
     try:
         if sys.platform == "win32":
@@ -83,13 +91,19 @@ def status() -> int:
     print(f"失败计数: {st.get('probe', {}).get('consecutive_failures', 0)}")
     print(f"最近错误: {st.get('last_error') or '-'}")
     switched = st.get("switched_at")
-    print(f"上次切换: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(switched)) if switched else '-'}")
+    print(
+        "上次切换: "
+        + (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(switched)) if switched else "-")
+    )
     print(f"值守: {'已启用' if watching else '未启用（运行 ghlink enable 开启）'}")
     history = st.get("history") or []
     if history:
         print("最近记录:")
         for h in history[-5:]:
-            print(f"  - {h.get('time', '')} {h.get('domain', '')} → {h.get('ip', '')} ({h.get('trigger', '')})")
+            print(
+                f"  - {h.get('time', '')} {h.get('domain', '')} → {h.get('ip', '')} "
+                f"({h.get('trigger', '')})"
+            )
     return 0
 
 
@@ -100,7 +114,7 @@ def _is_enabled() -> bool:
             r = platform_adapter._run_cmd(["schtasks", "/Query", "/TN", _service_name()])
             return r
         elif sys.platform == "darwin":
-            return os.path.exists(f"/Library/LaunchDaemons/com.ghlink.plist")
+            return os.path.exists("/Library/LaunchDaemons/com.ghlink.plist")
         else:
             # Linux: systemd timer 或 crontab
             if os.path.exists("/etc/systemd/system/ghlink.timer"):
@@ -125,7 +139,7 @@ ExecStart={_python_cmd()} {_config_path()}
 [Install]
 WantedBy=multi-user.target
 """
-        timer = f"""[Unit]
+        timer = """[Unit]
 Description=ghlink hourly? no, 1-minute timer
 
 [Timer]
@@ -203,7 +217,9 @@ def _enable_macos() -> int:
 """
     with open("/Library/LaunchDaemons/com.ghlink.plist", "w", encoding="utf-8") as f:
         f.write(plist)
-    if not platform_adapter._run_cmd(["launchctl", "load", "/Library/LaunchDaemons/com.ghlink.plist"]):
+    if not platform_adapter._run_cmd(
+        ["launchctl", "load", "/Library/LaunchDaemons/com.ghlink.plist"]
+    ):
         return 2
     print("[ghlink] 已启用值守（LaunchDaemon，1 分钟粒度）")
     return 0
@@ -221,12 +237,23 @@ def _disable_macos() -> int:
 def _enable_windows() -> int:
     # P1 修复（赛博 2026-08-14）：参数数组传递，不用 split() 拆命令串——
     # /TR 的引号参数（含空格路径）必须作为单个元素，split() 会拆坏导致 schtasks 注册失败
-    tr = f'{sys.executable} -m ghlink.main {_config_path()}'
+    tr = f"{sys.executable} -m ghlink.main {_config_path()}"
     args = [
-        "schtasks", "/Create", "/TN", "ghlink",
-        "/SC", "MINUTE", "/MO", "1",
-        "/TR", tr,
-        "/RL", "HIGHEST", "/RU", "SYSTEM", "/F",
+        "schtasks",
+        "/Create",
+        "/TN",
+        "ghlink",
+        "/SC",
+        "MINUTE",
+        "/MO",
+        "1",
+        "/TR",
+        tr,
+        "/RL",
+        "HIGHEST",
+        "/RU",
+        "SYSTEM",
+        "/F",
     ]
     if not platform_adapter._run_cmd(args):
         return 2

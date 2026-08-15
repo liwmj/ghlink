@@ -5,6 +5,7 @@
 - 单轮结果 = 全部目标通过 or 任一失败（保守：任一失败记本轮失败）
 - 纯标准库 socket/ssl/urllib，可 mock（测试不依赖真实网络）
 """
+
 import socket
 import ssl
 import time
@@ -31,7 +32,7 @@ def probe_target(host: str, timeout_sec: float) -> Dict[str, object]:
         try:
             # 2) TLS 握手（SNI）
             ctx = ssl.create_default_context()
-            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+            with ctx.wrap_socket(sock, server_hostname=host) as _tls:
                 # 3) HTTP HEAD，接受 2xx/3xx
                 req = urllib.request.Request(
                     f"https://{host}/",
@@ -40,7 +41,11 @@ def probe_target(host: str, timeout_sec: float) -> Dict[str, object]:
                 )
                 with _OPENER.open(req, timeout=timeout_sec) as resp:
                     ok = 200 <= resp.status < 400
-                    return {"ok": ok, "latency_ms": tcp_ms, "error": None if ok else f"HTTP {resp.status}"}
+                    return {
+                        "ok": ok,
+                        "latency_ms": tcp_ms,
+                        "error": None if ok else f"HTTP {resp.status}",
+                    }
         finally:
             try:
                 sock.close()

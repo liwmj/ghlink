@@ -7,22 +7,24 @@
 - 依赖只进安装包（pystray + Pillow），核心保持零依赖；未安装时 tray 命令提示并退出 2
 - Linux 纯 CLI，不提供托盘（pystray 在 Linux 需 appindicator，成本高收益低，不做）
 """
+
 import os
 import sys
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from . import service, state
 
 # pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
 try:
-    import pystray  # type: ignore
-    from PIL import Image, ImageDraw  # type: ignore
+    import pystray
+    from PIL import Image, ImageDraw
+
     HAS_TRAY = True
 except Exception:  # pragma: no cover - 未装依赖时
-    pystray = None  # type: ignore
-    Image = None  # type: ignore
+    pystray = None
+    Image = None
     HAS_TRAY = False
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
@@ -44,7 +46,9 @@ _TEXT = {
 
 def _config_path() -> str:
     """托盘读取状态用的配置路径（与 service 一致）。"""
-    return service._config_path() if os.path.exists(service._config_path()) else "ghlink_status.json"
+    return (
+        service._config_path() if os.path.exists(service._config_path()) else "ghlink_status.json"
+    )
 
 
 def _load_state() -> Dict[str, Any]:
@@ -132,10 +136,17 @@ def _build_menu():
 def main() -> int:
     """托盘入口：ghlink tray。仅 Windows/macOS；Linux 提示纯 CLI。"""
     if sys.platform == "linux":
-        print("[ghlink] Linux 为纯 CLI 设计，不提供托盘。值守请用 ghlink enable/disable/status", file=sys.stderr)
+        print(
+            "[ghlink] Linux 为纯 CLI 设计，不提供托盘。值守请用 ghlink enable/disable/status",
+            file=sys.stderr,
+        )
         return 0
     if not HAS_TRAY:  # pragma: no cover
-        print("[ghlink] 缺少托盘依赖（pystray/Pillow）。请使用安装包版本，或 pip install pystray pillow", file=sys.stderr)
+        print(
+            "[ghlink] 缺少托盘依赖（pystray/Pillow）。"
+            "请使用安装包版本，或 pip install pystray pillow",
+            file=sys.stderr,
+        )
         return 2
 
     st = _load_state()

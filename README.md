@@ -2,10 +2,16 @@
 
 > 当 GitHub 网络不稳定时，自动获取可用 IP 并替换 hosts，实现无感自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.1.0-blue)](https://github.com/liwmj/ghlink/releases/tag/v0.1.0)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](docs/DESIGN.md)
-[![Tests](https://img.shields.io/badge/tests-51%20passed-brightgreen)](tests/)
+<div align="center">
+
+[![CI](https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github)](https://github.com/liwmj/ghlink/actions/workflows/ci.yml)
+[![版本](https://img.shields.io/github/v/release/liwmj/ghlink?label=%E7%89%88%E6%9C%AC&style=flat&logo=github)](https://github.com/liwmj/ghlink/releases)
+[![License](https://img.shields.io/github/license/liwmj/ghlink?label=License&style=flat)](LICENSE)
+[![平台](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat)](docs/DESIGN.md)
+[![文档](https://img.shields.io/badge/docs-passing-brightgreen?style=flat)](docs/)
+[![下载](https://img.shields.io/github/downloads/liwmj/ghlink/total?label=%E4%B8%8B%E8%BD%BD&style=flat)](https://github.com/liwmj/ghlink/releases)
+
+</div>
 
 ---
 
@@ -56,24 +62,15 @@
 
 ## 工作原理
 
-```
-┌─────────────┐     1min 定时     ┌──────────────────┐
-│  定时调度器  │ ───────────────▶ │  监控层（探测）    │
-│ cron/launchd │                 │ TCP443+TLS+HEAD   │
-│ /任务计划程序 │                  └────────┬─────────┘
-└─────────────┘                           │ 连续 3 轮失败
-                                          ▼
-┌─────────────┐     获取新 IP     ┌──────────────────┐
-│  IP 通路自稳 │ ◀────────────── │  替换层（自愈）    │
-│ DoH×4+系统DNS│                 │ 备份→写入→刷DNS    │
-│ +缓存+预检   │                  │ →自检→失败回滚    │
-└─────────────┘                  └────────┬─────────┘
-                                          │ 自检通过
-                                          ▼
-                                    ┌─────────────┐
-                                    │  verifying  │ 连续 2 轮
-                                    │  确认状态    │ 成功 → normal
-                                    └─────────────┘
+```mermaid
+flowchart LR
+    A[定时调度<br>cron / launchd / 任务计划] --> B[监控层 探测<br>TCP443 + TLS + HTTP HEAD]
+    B -->|连续 3 轮失败| C[IP 通路自稳<br>DoH×4 + 系统DNS + 缓存 + 预检]
+    C --> D[替换层 自愈<br>备份 → 写入 → 刷DNS → 自检]
+    D -->|自检失败| E[回滚 restore_hosts<br>坏配置不留场]
+    D -->|自检通过| F[verifying 确认<br>连续 2 轮成功 → normal]
+    F --> B
+    B -->|正常| A
 ```
 
 **状态机**：`normal → switching → verifying → normal`，异常路径进入 `degraded`（只告警不破坏）。
@@ -115,8 +112,8 @@ src/ghlink/
 ### 安装
 
 ```bash
-# 方式一：从 Release 下载源码包
-curl -L https://api.github.com/repos/liwmj/ghlink/tarball/v0.1.0 -o ghlink.tar.gz
+# 方式一：从 Release 下载源码包（最新版）
+curl -L https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.1.tar.gz -o ghlink.tar.gz
 tar xzf ghlink.tar.gz && cd ghlink-*
 
 # 方式二：直接 clone（推荐，获取最新代码）
@@ -244,13 +241,13 @@ python -m ghlink.main config.json
 
 ## 测试与验证
 
-- **单元/集成测试**：`tests/` 目录，56 个用例覆盖配置/探测/解析/hosts/状态/锁/通知/全链路/域名健康度
+- **单元/集成测试**：`tests/` 目录，60 个用例覆盖配置/探测/解析/hosts/状态/锁/通知/全链路/域名健康度
 - **运行测试**：`python -m pytest tests/ -v`
 - **真机冒烟**：已完成三平台验证（2026-08-14）：
   - Linux（Ubuntu）：注入故障 → 触发切换 → 写入 → 自检 → 回滚 → 锁接管 → 冷却防抖全链路通过
   - Windows（Server 2022）：正常路径无感跳过 / E-004 降级（全源不可达保持原配置）/ 注入 127.0.0.1 → 自动切换 20.205.243.168 / 2 轮确认恢复 / 残留锁接管 + 并发跳过
   - macOS：本机故障注入全链路冒烟（正常路径/切换/回滚/锁/冷却）通过
-- **验证记录**：三平台（macOS / Windows / Linux）56 用例全绿 + 真机冒烟报告
+- **验证记录**：三平台（macOS / Windows / Linux）60 用例全绿 + 真机冒烟报告
 
 ---
 
@@ -258,9 +255,9 @@ python -m ghlink.main config.json
 
 | 平台 | 单测 | 真机冒烟 | 备注 |
 |------|------|----------|------|
-| macOS 13+ | ✅ 56 passed | ✅ 已完成 (2026-08-14) | Intel / Apple Silicon |
-| Windows 10/11 / Server | ✅ 56 passed | ✅ 已完成 (2026-08-13) | UAC 提权 / ipconfig flushdns |
-| Linux (Ubuntu/Debian) | ✅ 56 passed | ✅ 已完成 | resolvectl / 备份恢复 |
+| macOS 13+ | ✅ 60 passed | ✅ 已完成 (2026-08-14) | Intel / Apple Silicon |
+| Windows 10/11 / Server | ✅ 60 passed | ✅ 已完成 (2026-08-13) | UAC 提权 / ipconfig flushdns |
+| Linux (Ubuntu/Debian) | ✅ 60 passed | ✅ 已完成 | resolvectl / 备份恢复 |
 
 ---
 
@@ -268,8 +265,8 @@ python -m ghlink.main config.json
 
 - [x] **v0.1.0**（2026-08-13）：核心自愈闭环 + 三平台单测全绿 + 双平台真机冒烟
 - [x] **v0.2.0**（2026-08-14）：目标域名健康度管理（长期不可达域名自动降级，核心域名优先切换）+ 三平台真机冒烟闭环 + 生产就绪（Production/Stable）
-- [ ] **v0.2.0**：平台便捷安装包发布（Windows exe / macOS brew / Linux deb / PyPI）
-- [ ] **v0.2.x**：历史切换统计与报表
+- [x] **v0.2.1**（2026-08-14）：默认不自启（李工定规）+ 平台安装包发布（Windows installer / macOS brew / Linux deb）
+- [ ] **v0.3.x**：历史切换统计与报表
 
 ---
 
@@ -277,7 +274,16 @@ python -m ghlink.main config.json
 
 - 2026-08-13：立项（PJ-002）→ 架构设计 → 核心 9 模块实现 → 代码审查（P0/P1/P2 全修复）→ 测试套件合入（51 用例全绿）→ 三平台验证（macOS/Linux/Windows 51 passed）→ Linux + Windows 真机冒烟完成 → Release v0.1.0
 - 2026-08-13：Windows 真机冒烟完成，三平台矩阵全绿
+- 2026-08-14：v0.2.0/v0.2.1 发布（目标域名健康度管理 + 默认不自启 + 多平台安装包）；三平台真机冒烟闭环
+- 2026-08-15：按 P-006 v1.21 对齐（ruff 代码规范 + CI 门禁 + README 徽章参数化/mermaid 原理图 + 测试矩阵）
 - 立项评估：A 级（优化 GitHub 网络链路，直接影响开发/同步效率与稳定性）
+
+---
+
+## Contributors
+
+<!-- 早期手动头像墙，有外部贡献者后切换 all-contributors 自动化（P-006 v1.15） -->
+<a href="https://github.com/liwmj"><img src="https://github.com/liwmj.png?size=40" width="40" height="40" alt="liwmj"></a>
 
 ---
 

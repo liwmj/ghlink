@@ -5,6 +5,7 @@
 - 定时跑 + 手动跑不重叠：已被持有 → yield False，调用方直接退出本轮
 - 残留锁接管：PID 已死 / 超时（默认 600s）→ 视为残留锁，接管
 """
+
 import os
 
 from ghlink import lock

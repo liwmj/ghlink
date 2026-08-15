@@ -7,6 +7,7 @@
 - backup_hosts() -> str             # 返回备份路径
 - restore_hosts(backup_path) -> bool
 """
+
 import os
 import shutil
 import subprocess
@@ -27,6 +28,7 @@ def _is_admin() -> bool:
     if sys.platform == "win32":
         try:
             import ctypes
+
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except Exception:
             return False
@@ -45,6 +47,7 @@ def ensure_privilege() -> bool:
     if sys.platform == "win32":
         try:
             import ctypes
+
             params = " ".join(f'"{a}"' for a in sys.argv)
             ret = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", sys.executable, params, None, 1

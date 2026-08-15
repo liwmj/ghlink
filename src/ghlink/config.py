@@ -7,10 +7,10 @@ config.example.json 为模板。字段：
 - notify: feishu_webhook(空=关闭), enabled(默认true)
 - state_file, lock_file, hosts_backup_dir
 """
+
 import json
 import os
-from typing import Any, Dict, List
-
+from typing import Any, Dict
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "probe": {
@@ -52,7 +52,7 @@ def load_config(path: str) -> Dict[str, Any]:
     """加载配置，缺失字段回退默认值。"""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
     if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             user_cfg = json.load(f)
         _deep_merge(cfg, user_cfg)
     return cfg

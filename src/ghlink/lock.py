@@ -7,6 +7,7 @@
   c) 存在但 PID 已死/超时（如 10min 过期）→ 视为残留锁，接管
 - Windows 用 PID 文件（进程内互斥足够）；Linux/macOS 用 fcntl.flock（进程退出自动释放）
 """
+
 import os
 import sys
 import time
@@ -32,6 +33,7 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     if sys.platform != "win32":
         try:
             import fcntl
+
             fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -82,7 +84,7 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     try:
         if os.path.exists(lock_path):
             try:
-                with open(lock_path, "r", encoding="utf-8") as f:
+                with open(lock_path, encoding="utf-8") as f:
                     pid_str, ts_str = f.read().split()
                 pid, ts = int(pid_str), float(ts_str)
                 if _pid_alive(pid) and (time.time() - ts) < stale_after_sec:
@@ -97,7 +99,7 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     finally:
         if acquired and os.path.exists(lock_path):
             try:
-                with open(lock_path, "r", encoding="utf-8") as f:
+                with open(lock_path, encoding="utf-8") as f:
                     pid_str = f.read().split()[0]
                 if int(pid_str) == os.getpid():
                     os.unlink(lock_path)

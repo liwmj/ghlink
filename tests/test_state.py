@@ -6,9 +6,8 @@
 - 计数跨运行累计（重启不丢）、成功一轮清零
 - 原子写（临时文件 + rename，不留半截文件）
 """
-import json
 
-import pytest
+import json
 
 from ghlink import state
 

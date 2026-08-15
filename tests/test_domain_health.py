@@ -7,9 +7,8 @@
 - H-004 核心域名永不降级
 - H-005 触发切换时只替换活跃域名（降级域名不写入 hosts）
 """
-import json
 
-import pytest
+import json
 
 from ghlink import main
 
@@ -40,7 +39,14 @@ def _probe_factory(domain_ok):
     """domain_ok: {域名: bool}，构造对应 probe_all。"""
 
     def _probe(targets, timeout):
-        return {t: {"ok": domain_ok.get(t, True), "latency_ms": 0, "error": None if domain_ok.get(t, True) else "sim"} for t in targets}
+        return {
+            t: {
+                "ok": domain_ok.get(t, True),
+                "latency_ms": 0,
+                "error": None if domain_ok.get(t, True) else "sim",
+            }
+            for t in targets
+        }
 
     return _probe
 
@@ -55,11 +61,17 @@ class TestDomainHealth:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            _probe_factory({"github.com": True, "api.github.com": True, "codeload.github.com": False}),
+            _probe_factory(
+                {"github.com": True, "api.github.com": True, "codeload.github.com": False}
+            ),
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(3):
             main.run(cfg_path)
         st = _read_state(tmp_path)
@@ -71,12 +83,19 @@ class TestDomainHealth:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            _probe_factory({"github.com": True, "api.github.com": True, "codeload.github.com": False}),
+            _probe_factory(
+                {"github.com": True, "api.github.com": True, "codeload.github.com": False}
+            ),
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         applied = []
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: applied.append(block) or (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir: applied.append(block) or (True, backup_dir),
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(6):  # 超过降级阈值 + 超过触发阈值
             main.run(cfg_path)
         assert applied == []  # 从未触发切换
@@ -95,8 +114,12 @@ class TestDomainHealth:
 
         monkeypatch.setattr("ghlink.probe.probe_all", flaky)
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(3):  # 3 轮失败 → codeload 降级
             main.run(cfg_path)
         assert _read_state(tmp_path)["probe"]["targets"]["codeload.github.com"]["degraded"] is True
@@ -109,11 +132,17 @@ class TestDomainHealth:
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            _probe_factory({"github.com": False, "api.github.com": False, "codeload.github.com": True}),
+            _probe_factory(
+                {"github.com": False, "api.github.com": False, "codeload.github.com": True}
+            ),
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(5):
             main.run(cfg_path)
         st = _read_state(tmp_path)
@@ -126,12 +155,19 @@ class TestDomainHealth:
         # 核心域名失败触发切换，codeload 已降级
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
-            _probe_factory({"github.com": False, "api.github.com": False, "codeload.github.com": False}),
+            _probe_factory(
+                {"github.com": False, "api.github.com": False, "codeload.github.com": False}
+            ),
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         blocks = []
-        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block, backup_dir: blocks.append(block) or (True, backup_dir))
-        monkeypatch.setattr("ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True)
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir: blocks.append(block) or (True, backup_dir),
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         # 先跑 3 轮让 codeload 降级（同时核心域名累计失败）
         for _ in range(3):
             main.run(cfg_path)

@@ -5,6 +5,7 @@
 - 多源结果取多数票/交集，候选先做 TCP 443 预检，通过才进入替换
 - 标准库 urllib 实现 DoH（GET /resolve?name=xxx&type=A，Accept: application/dns-json）
 """
+
 import json
 import os
 import socket
@@ -12,7 +13,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List
+from typing import Dict, List, cast
 
 # 各 DoH 源的响应格式兼容：都返回 JSON，A 记录在 Answer[].data（阿里/腾讯/CF/Google 一致）
 _HEADERS = {
@@ -42,7 +43,7 @@ def query_system_dns(domain: str) -> List[str]:
     """系统 DNS 直查（socket.getaddrinfo），失败返回空列表。"""
     try:
         infos = socket.getaddrinfo(domain, None, socket.AF_INET)
-        return list({info[4][0] for info in infos})
+        return list({cast(str, info[4][0]) for info in infos})
     except Exception:
         return []
 
@@ -50,6 +51,7 @@ def query_system_dns(domain: str) -> List[str]:
 def _tcp443_ok(ip: str, domain: str, timeout_sec: float) -> bool:
     """候选 IP 预检：TCP 443 建连 + TLS SNI 握手。"""
     import ssl
+
     try:
         sock = socket.create_connection((ip, 443), timeout=timeout_sec)
         try:
@@ -86,9 +88,9 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
     来源：多个 DoH + 系统 DNS；无 DoH 配置时只用系统 DNS。
     返回候选（按出现次数降序），无任何候选返回 []。
     """
-    timeout = float(cfg.get("timeout_sec", 5))
-    doh_sources = cfg.get("doh_sources") or []
-    max_candidates = int(cfg.get("max_candidates", 5)) or 5
+    timeout = float(cast(float, cfg.get("timeout_sec", 5)))
+    doh_sources = cast(List[str], cfg.get("doh_sources") or [])
+    max_candidates = int(cast(int, cfg.get("max_candidates", 5))) or 5
 
     # 1) 并行取多源
     sources: List[List[str]] = []
@@ -105,6 +107,7 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
 
     # 2) 多数票统计（出现次数降序）
     from collections import Counter
+
     counter: Counter = Counter()
     for ips in sources:
         for ip in ips:
@@ -134,7 +137,7 @@ _CACHE_PREFIX = "ghlink_cache_"
 
 
 def _cache_path(domain: str, cfg: Dict[str, object]) -> str:
-    base = cfg.get("state_file", "ghlink_status.json")
+    base = cast(str, cfg.get("state_file", "ghlink_status.json"))
     d = os.path.dirname(base)
     fname = f"{_CACHE_PREFIX}{domain.replace('.', '_')}.json"
     return os.path.join(d, fname) if d else fname
@@ -143,11 +146,11 @@ def _cache_path(domain: str, cfg: Dict[str, object]) -> str:
 def _load_cache(domain: str, cfg: Dict[str, object]) -> List[str]:
     """读取上次成功的候选缓存；不存在/过期返回空列表。"""
     try:
-        ttl = int(cfg.get("cache_ttl_sec", 3600))
+        ttl = int(cast(int, cfg.get("cache_ttl_sec", 3600)))
         p = _cache_path(domain, cfg)
         if not os.path.exists(p):
             return []
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             data = json.load(f)
         if (time.time() - float(data.get("ts", 0))) > ttl:
             return []
@@ -159,6 +162,7 @@ def _load_cache(domain: str, cfg: Dict[str, object]) -> List[str]:
 def _save_cache(domain: str, ips: List[str], cfg: Dict[str, object]) -> None:
     """写入成功候选缓存（原子写）。"""
     import tempfile
+
     try:
         p = _cache_path(domain, cfg)
         d = os.path.dirname(os.path.abspath(p)) or "."

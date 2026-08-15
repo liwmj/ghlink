@@ -1,4 +1,5 @@
 """ghlink 测试公共设施：把 src/ 加入 import 路径，提供共享 fixture。"""
+
 import sys
 from pathlib import Path
 

@@ -5,13 +5,13 @@
 
 退出码：0=正常（含跳过） 1=降级/告警 2=配置/参数错误（供定时任务日志区分）
 """
-import os
+
 import sys
 import time
 from typing import Any, Dict
 
 from . import config as cfgmod
-from . import hosts_manager, lock, notifier, platform_adapter, probe, resolver, service, state
+from . import hosts_manager, lock, notifier, probe, resolver, service, state
 
 
 def _state_path(cfg: Dict[str, Any]) -> str:
@@ -116,7 +116,9 @@ def run(config_path: str = "config.json") -> int:
             st["state"] = "degraded"
             st["last_error"] = "no valid IP candidates"
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
-                notifier.send(f"[ghlink] 无法获取可用 IP，进入 degraded：{st['last_error']}", webhook)
+                notifier.send(
+                    f"[ghlink] 无法获取可用 IP，进入 degraded：{st['last_error']}", webhook
+                )
                 notifier.mark_alerted(st)
             state.save(st_path, st)
             return 1
@@ -152,20 +154,26 @@ def run(config_path: str = "config.json") -> int:
         st["current_ip"] = first_ip
         st["last_error"] = None
         st["history"] = (st.get("history") or [])[-19:]
-        st["history"].append({
-            "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "domain": ",".join(active),
-            "ip": first_ip,
-            "trigger": f"{failed} consecutive failures",
-        })
+        st["history"].append(
+            {
+                "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "domain": ",".join(active),
+                "ip": first_ip,
+                "trigger": f"{failed} consecutive failures",
+            }
+        )
         if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
-            notifier.send(f"[ghlink] 已自动切换 IP {first_ip}（触发：连续 {failed} 次失败）", webhook)
+            notifier.send(
+                f"[ghlink] 已自动切换 IP {first_ip}（触发：连续 {failed} 次失败）", webhook
+            )
             notifier.mark_alerted(st)
         state.save(st_path, st)
         return 0
 
 
-def _update_domain_health(st: Dict[str, Any], targets: list, results: Dict[str, Any], cfg: Dict[str, Any]) -> list:
+def _update_domain_health(
+    st: Dict[str, Any], targets: list, results: Dict[str, Any], cfg: Dict[str, Any]
+) -> list:
     """目标域名健康度管理（v0.2）。
 
     规则：
@@ -182,7 +190,9 @@ def _update_domain_health(st: Dict[str, Any], targets: list, results: Dict[str, 
     per = st.setdefault("probe", {}).setdefault("targets", {})
     active = []
     for t in targets:
-        entry = per.setdefault(t, {"ok": False, "fail_count": 0, "degraded": False, "recover_count": 0})
+        entry = per.setdefault(
+            t, {"ok": False, "fail_count": 0, "degraded": False, "recover_count": 0}
+        )
         r = results.get(t, {})
         ok = bool(r.get("ok"))
         entry["ok"] = ok
@@ -210,7 +220,6 @@ def _update_domain_health(st: Dict[str, Any], targets: list, results: Dict[str, 
 
 def main() -> None:
     """CLI 入口：支持子命令 run / enable / disable / status / tray。"""
-    import sys
 
     # Windows 控制台默认 GBK，打印中文会 charmap 编码报错（W3 实测暴露）
     # 统一强制 UTF-8 输出，errors=replace 兜底非法字符
@@ -238,9 +247,11 @@ def main() -> None:
         sys.exit(service.status())
     if first == "tray":
         from . import tray
+
         sys.exit(tray.main())
     if first in ("--version", "-V"):
         from . import __version__
+
         print(f"ghlink {__version__}")
         sys.exit(0)
     if first in ("--help", "-h"):

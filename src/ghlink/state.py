@@ -2,6 +2,7 @@
 
 字段严禁私自改，改 schema 必须走评审。读写均在防重入锁内完成。
 """
+
 import json
 import os
 import tempfile
@@ -25,7 +26,7 @@ def load(path: str) -> Dict[str, Any]:
     """读取状态文件；不存在或损坏回退默认值。"""
     if path and os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
                 return data

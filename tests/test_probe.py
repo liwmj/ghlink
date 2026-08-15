@@ -5,7 +5,6 @@
 - 单轮并行探测，整体耗时 ≤10s（超时目标 5s）
 - 单轮结果 = 全部目标通过 or 任一失败（保守：任一失败记本轮失败）
 """
-import pytest
 
 from ghlink import probe
 
@@ -19,6 +18,7 @@ class TestProbeTarget:
     def test_timeout_marks_failure(self, monkeypatch):
         def fake(host, timeout_sec):
             return {"ok": False, "latency_ms": -1, "error": "timeout"}
+
         monkeypatch.setattr(probe, "probe_target", fake)
         r = probe.probe_target("github.com", 5.0)
         assert r["ok"] is False
@@ -33,6 +33,7 @@ class TestProbeAll:
     def test_single_failure_marks_round_failed(self, monkeypatch):
         def fake(host, timeout_sec):
             return {"ok": host != "api.github.com", "latency_ms": 0, "error": None}
+
         monkeypatch.setattr(probe, "probe_target", fake)
         results = probe.probe_all(["github.com", "api.github.com"], 5.0)
         assert probe.round_ok(results) is False

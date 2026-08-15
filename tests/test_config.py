@@ -3,6 +3,7 @@
 对应 src/ghlink/config.py：load_config / _deep_merge。
 口径：无配置文件 → 全默认；部分覆盖 → 其余回退默认；非法输入 → 明确报错。
 """
+
 import json
 
 import pytest
@@ -50,5 +51,5 @@ class TestInvalidInput:
     def test_invalid_json_raises_clear_error(self, tmp_path):
         p = tmp_path / "bad.json"
         p.write_text("{ not json", encoding="utf-8")
-        with pytest.raises(Exception):
+        with pytest.raises(json.JSONDecodeError):
             config.load_config(str(p))

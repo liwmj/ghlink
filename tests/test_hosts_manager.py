@@ -6,7 +6,6 @@
 - 写入前备份，写入后自检；自检失败 → 回滚 + degraded + 告警，坏配置绝不留场
 - 提权失败 → 明确失败，绝不动文件
 """
-import pytest
 
 from ghlink import hosts_manager
 
@@ -34,30 +33,26 @@ class TestBuildBlock:
 class TestApplyBlock:
     def test_privilege_failure_no_write(self, monkeypatch):
         """提权失败：返回 False，且不产生写动作。"""
-        monkeypatch.setattr(
-            "ghlink.platform_adapter.ensure_privilege", lambda: False
-        )
-        monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block: False
-        )
+        monkeypatch.setattr("ghlink.platform_adapter.ensure_privilege", lambda: False)
+        monkeypatch.setattr("ghlink.hosts_manager.apply_block", lambda block: False)
         assert hosts_manager.apply_block("x") is False
 
-    def test_verify_failure_triggers_rollback(self, monkeypatch):
-        """自检失败 → 回滚（restore_hosts 被调用），坏配置不留场。"""
-        calls = {"rollback": 0}
+    def test_write_failure_restores_backup(self, monkeypatch):
+        """写入失败 → 恢复备份（restore_hosts 被调用），坏配置不留场。"""
+        restored = []
+        monkeypatch.setattr("ghlink.platform_adapter.ensure_privilege", lambda: True)
+        monkeypatch.setattr("ghlink.platform_adapter.get_hosts_path", lambda: "/tmp/fake_hosts")
         monkeypatch.setattr(
-            "ghlink.hosts_manager.verify_after_apply",
-            lambda targets, timeout: False,
+            "ghlink.platform_adapter.backup_hosts", lambda backup_dir="backup": "backup/hosts.bak"
         )
-        original_apply = hosts_manager.apply_block
-
-        def fake_apply(block):
-            # 模拟真实流程：apply 失败时内部回滚
-            return False
-
-        monkeypatch.setattr(hosts_manager, "apply_block", fake_apply)
-        # 断言：自检失败路径下应用结果不为成功
-        assert original_apply is not None
+        monkeypatch.setattr(
+            "ghlink.platform_adapter.restore_hosts",
+            lambda path: restored.append(path) or True,
+        )
+        monkeypatch.setattr("ghlink.hosts_manager._write_hosts", lambda path, content: False)
+        ok, backup = hosts_manager.apply_block("# ghlink Start\nx\n# ghlink End\n")
+        assert ok is False
+        assert restored == ["backup/hosts.bak"]
 
 
 class TestVerifyAfterApply:

@@ -5,7 +5,7 @@
 - 写入前 backup_hosts()，写入后立即自检（probe 替换域名），失败 restore_hosts()
 - 自检失败 → 回滚 + degraded 状态 + 告警，坏配置绝不留场
 """
-import os
+
 from typing import Dict, List
 
 from . import platform_adapter
@@ -26,7 +26,7 @@ def build_block(entries: Dict[str, List[str]]) -> str:
 
 def _read_hosts(path: str) -> str:
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
     except OSError:
         return ""
@@ -57,7 +57,7 @@ def apply_block(block: str, backup_dir: str = "backup") -> tuple:
     end = content.find(END_MARK)
     if start != -1 and end != -1 and end > start:
         before = content[:start]
-        after = content[end + len(END_MARK):]
+        after = content[end + len(END_MARK) :]
         content = before + block + after
     elif start == -1 and end == -1:
         content = content.rstrip("\n") + "\n" + block
@@ -78,6 +78,7 @@ def apply_block(block: str, backup_dir: str = "backup") -> tuple:
 def verify_after_apply(targets: List[str], timeout_sec: float) -> bool:
     """写入后立即自检：新 IP 下全部目标连通才算成功。"""
     from . import probe
+
     results = probe.probe_all(targets, timeout_sec)
     return probe.round_ok(results)
 

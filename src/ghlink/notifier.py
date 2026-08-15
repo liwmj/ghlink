@@ -5,11 +5,11 @@
 - 冷却期去重：切换防抖期间不重复发（状态文件 last_alert_at 控制）
 - 标准库 urllib 实现
 """
+
 import json
 import sys
 import time
 import urllib.request
-from typing import Optional
 
 
 def send(message: str, webhook_url: str) -> bool:
