@@ -42,3 +42,22 @@ jobs:
         run: pip install pytest
       - name: Run tests
         run: python -m pytest tests/ -v
+
+  release-workflow-check:
+    name: 合并门禁 · 发布 workflow 存在性检查（P-006 v1.22）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 校验发布 workflow 存在且触发条件正确
+        run: |
+          set -e
+          # 1) 发布 workflow 文件必须存在（P-007：tag 触发构建发包 + release 触发 PyPI）
+          for wf in .github/workflows/build.yml .github/workflows/python-publish.yml; do
+            [ -f "$wf" ] || { echo "❌ 缺少发布 workflow: $wf"; exit 1; }
+            echo "✅ 存在: $wf"
+          done
+          # 2) 触发条件校验：build.yml 必须由 tag push 触发
+          grep -q "tags:" .github/workflows/build.yml || { echo "❌ build.yml 缺少 tag 触发条件"; exit 1; }
+          # 3) python-publish.yml 必须由 release published 触发
+          grep -q "release:" .github/workflows/python-publish.yml || { echo "❌ python-publish.yml 缺少 release 触发条件"; exit 1; }
+          echo "✅ 合并门禁通过：发布 workflow 存在且可触发（push tag → build / release → PyPI）"
