@@ -231,8 +231,14 @@ def main() -> None:
                 pass
 
     args = sys.argv[1:]
-    # 无参数或首个参数不是子命令 → 兼容旧用法：当作 config 路径
+    # Windows 打包版（PyInstaller frozen）：双击快捷方式无参数 → 默认进托盘
+    # （v0.3 修复：原无参数=单轮探测，跑完退出被误认为闪退）
     if not args:
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            from . import tray
+
+            sys.exit(tray.main())
+        # 非打包/其他平台：兼容旧用法，当作 config 路径单轮运行
         sys.exit(run("config.json"))
 
     first = args[0]
