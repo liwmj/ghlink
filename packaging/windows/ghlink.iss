@@ -33,14 +33,15 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Files]
-; 主程序 + 配置文件（PyInstaller 产物 dist/windows/ghlink.exe）
+; 主程序 + 配置文件 + 说明文档（PyInstaller 产物 dist/windows/ghlink.exe）
 Source: "..\..\dist\windows\ghlink.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\ghlink"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"
 Name: "{group}\ghlink 使用说明"; Filename: "{app}\README.md"
-Name: "{autodesktop}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
