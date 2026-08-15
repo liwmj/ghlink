@@ -1,5 +1,7 @@
 # ghlink — GitHub 链路自愈工具
 
+<img src="assets/ghlink-icon-128.png" alt="ghlink logo" width="64" height="64" style="background: #fff; border-radius: 12px; padding: 6px; vertical-align: middle; box-shadow: 0 1px 3px rgba(0,0,0,.12);">
+
 > 当 GitHub 网络不稳定时，自动获取可用 IP 并替换 hosts，实现无感自愈。
 
 [![CI](https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github)](https://github.com/liwmj/ghlink/actions/workflows/ci.yml)
