@@ -44,6 +44,26 @@ _TEXT = {
 }
 
 
+def _icon_path() -> str:
+    """项目图标路径：安装包（PyInstaller datas）优先，仓库 assets/ 兜底。"""
+    candidates = []
+    if getattr(sys, "frozen", False):  # PyInstaller 打包环境
+        base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        candidates.append(os.path.join(base, "assets", "ghlink-icon.png"))
+    # 仓库/开发环境
+    candidates.append(
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "assets",
+            "ghlink-icon.png",
+        )
+    )
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return ""
+
+
 def _config_path() -> str:
     """托盘读取状态用的配置路径（与 service 一致）。"""
     return (
@@ -66,12 +86,33 @@ def _status_text() -> str:
 
 
 def _make_icon(color: str, size: int = 64):
-    """生成纯色圆角图标（无外部资源文件）。"""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    """生成托盘图标：项目图标 + 右下角状态色徽章；无图标资源时回退纯色圆角。"""
+    img = None
+    path = _icon_path()
+    if path:
+        try:
+            icon = Image.open(path).convert("RGBA")
+            # contain 居中：保持比例不变形（横版图标贴入方形画布）
+            icon.thumbnail((size, size), Image.LANCZOS)
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            img.paste(
+                icon,
+                ((size - icon.width) // 2, (size - icon.height) // 2),
+                icon,
+            )
+        except Exception:
+            img = None
+    if img is None:  # 回退：纯色圆角 + 中心 G
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse((4, 4, size - 4, size - 4), fill=color)
+        d.text((size * 0.35, size * 0.28), "G", fill="white")
+    # 右下角状态徽章（带白边，深浅底色都清晰）
     d = ImageDraw.Draw(img)
-    d.ellipse((4, 4, size - 4, size - 4), fill=color)
-    # 中心字母 G
-    d.text((size * 0.35, size * 0.28), "G", fill="white")
+    r = max(size // 8, 6)
+    cx, cy = size - r - 2, size - r - 2
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill="white")
+    d.ellipse((cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2), fill=color)
     return img
 
 
