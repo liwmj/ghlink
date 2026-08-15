@@ -63,10 +63,25 @@ jobs:
           pip install wheel build
           python -m build --wheel
           bash packaging/build_deb.sh
+      - name: Generate apt repo metadata (Packages.gz + Release)
+        run: |
+          set -e
+          # 方案①（李工 17:23 拍板，17:27 确认主流）：Release 托管 apt 源，trusted=yes 免签名
+          mkdir -p apt-repo/pool/main
+          cp dist/*.deb apt-repo/pool/main/
+          cd apt-repo
+          apt-ftparchive packages pool/ > Packages
+          gzip -k -f Packages
+          apt-ftparchive release . > Release
+          ls -la . pool/main/
       - uses: actions/upload-artifact@v4
         with:
           name: dist-linux
           path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-repo
+          path: apt-repo/
 
   build-macos:
     name: macOS brew formula (validate)
@@ -119,4 +134,6 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.exe
             artifacts/**/*.deb
+            artifacts/apt-repo/Packages.gz
+            artifacts/apt-repo/Release
           generate_release_notes: true
