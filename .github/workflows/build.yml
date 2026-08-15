@@ -2,7 +2,7 @@ name: Build ghlink (v0.2.0)
 
 on:
   push:
-    tags: ["v0.2.*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
