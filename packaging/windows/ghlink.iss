@@ -33,9 +33,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Files]
-; 主程序 + 配置文件（PyInstaller 产物 dist/windows/ghlink.exe）
+; 主程序 + 配置文件 + 说明文档（PyInstaller 产物 dist/windows/ghlink.exe）
 Source: "..\..\dist\windows\ghlink.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"
