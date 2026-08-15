@@ -20,6 +20,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(ROOT / "config.example.json"), "."),
+        (str(ROOT / "assets" / "ghlink-icon.png"), "assets"),
     ],
     hiddenimports=["pystray", "PIL"],  # 托盘依赖（仅安装包注入，核心零依赖；Pillow 其余由 PyInstaller hook 收集）
     hookspath=[],
