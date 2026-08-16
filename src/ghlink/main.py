@@ -115,6 +115,9 @@ def run(config_path: str = "config.json") -> int:
         if not ok_candidates or not entries:
             st["state"] = "degraded"
             st["last_error"] = "no valid IP candidates"
+            # v0.2.8：缓存也空时补充提示（帮助区分全源失败 vs 缓存兜底失效）
+            if not st.get("source_health"):
+                st["last_error"] += " (candidates unreachable, no cache fallback)"
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
                 notifier.send(
                     f"[ghlink] 无法获取可用 IP，进入 degraded：{st['last_error']}", webhook

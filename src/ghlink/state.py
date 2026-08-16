@@ -16,6 +16,8 @@ def default_state() -> Dict[str, Any]:
         "timestamp": "",
         "state": "normal",  # normal|switching|verifying|degraded|disabled
         "probe": {"targets": {}, "consecutive_failures": 0},
+        # v0.2.8：resolver 源级健康记录 {source_url: {ok, last_error, last_ok_at}}
+        "source_health": {},
         "current_ip": None,
         "history": [],
         "last_error": None,

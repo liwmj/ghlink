@@ -46,7 +46,7 @@ class TestResolveBest:
             lambda url, domain, timeout: [] if "alidns" in url else ["140.82.112.3"],
         )
         monkeypatch.setattr(resolver, "query_system_dns", lambda domain: ["140.82.112.3"])
-        monkeypatch.setattr(resolver, "_precheck", lambda ips: ips)  # 预检直通
+        monkeypatch.setattr(resolver, "_precheck", lambda ips, **k: ips)  # 预检直通
         cfg = {"doh_sources": ["https://dns.alidns.com/resolve", "https://doh.pub/dns-query"]}
         ips = resolver.resolve_best("github.com", cfg)
         assert "140.82.112.3" in ips
@@ -59,7 +59,7 @@ class TestResolveBest:
 
         monkeypatch.setattr(resolver, "query_doh", fake)
         monkeypatch.setattr(resolver, "query_system_dns", lambda domain: ["2.2.2.2"])
-        monkeypatch.setattr(resolver, "_precheck", lambda ips: ips)
+        monkeypatch.setattr(resolver, "_precheck", lambda ips, **k: ips)
         cfg = {"doh_sources": ["https://a/x", "https://b/x", "https://google/x"]}
         ips = resolver.resolve_best("github.com", cfg)
         assert ips[0] == "2.2.2.2"
@@ -68,7 +68,7 @@ class TestResolveBest:
         """预检剔除不通的候选。"""
         monkeypatch.setattr(resolver, "query_system_dns", lambda domain: ["1.1.1.1", "2.2.2.2"])
         monkeypatch.setattr(
-            resolver, "_precheck", lambda ips: [ip for ip in ips if ip == "2.2.2.2"]
+            resolver, "_precheck", lambda ips, **k: [ip for ip in ips if ip == "2.2.2.2"]
         )
         cfg = {"doh_sources": []}
         ips = resolver.resolve_best("github.com", cfg)

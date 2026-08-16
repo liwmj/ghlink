@@ -67,10 +67,11 @@ def _tcp443_ok(ip: str, domain: str, timeout_sec: float) -> bool:
         return False
 
 
-def _precheck(ips: List[str], timeout_sec: float = 5.0) -> List[str]:
+def _precheck(ips: List[str], timeout_sec: float = 15.0) -> List[str]:
     """候选 IP 列表预检：TCP 443 建连粗筛，返回通过子集。
 
-    注：预检为粗筛（真正三层校验在 probe），固定默认超时 5s。
+    注：预检为粗筛（真正三层校验在 probe）；超时跟随探测配置（v0.2.8 修：不再固定 5s，
+    慢链路误杀可达 IP）。
     """
     passed = []
     for ip in ips:
@@ -125,7 +126,7 @@ def resolve_best(domain: str, cfg: Dict[str, object]) -> List[str]:
     ranked = [ip for ip, _ in counter.most_common(max_candidates * 2)]
 
     # 3) TCP 443 预检，剔除不通（保留前 max_candidates 个）
-    passed = _precheck(ranked)
+    passed = _precheck(ranked, timeout_sec=timeout)
     result = passed[:max_candidates]
     # P2: 成功后写缓存（供后续多源全挂时兜底）
     if result:
