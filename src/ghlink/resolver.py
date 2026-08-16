@@ -67,19 +67,43 @@ def _tcp443_ok(ip: str, domain: str, timeout_sec: float) -> bool:
         return False
 
 
+def _tcp443(ip: str, timeout_sec: float) -> bool:
+    """单次 TCP 443 建连尝试，成功返回 True。"""
+    try:
+        with socket.create_connection((ip, 443), timeout=timeout_sec):
+            return True
+    except Exception:
+        return False
+
+
 def _precheck(ips: List[str], timeout_sec: float = 15.0) -> List[str]:
     """候选 IP 列表预检：TCP 443 建连粗筛，返回通过子集。
 
-    注：预检为粗筛（真正三层校验在 probe）；超时跟随探测配置（v0.2.8 修：不再固定 5s，
-    慢链路误杀可达 IP）。
+    超时跟随探测配置（v0.2.8）；失败分类处理（v0.2.9 赛博设计口径）：
+    - 超时类失败（ETIMEDOUT/EWOULDBLOCK/EAGAIN 等）→ 重试 1 次（间隔 2s），
+      还不行才剔除——区分「慢」和「死」，抖动链路不误杀
+    - 连接被拒/重置（ConnectionRefusedError/ConnectionResetError）→ 直接剔除不重试——
+      真死 IP 不浪费时间
+    判定口诀：超时是配置问题、拒绝是真死。
     """
     passed = []
     for ip in ips:
+        if _tcp443(ip, timeout_sec):
+            passed.append(ip)
+            continue
+        # 首次失败：区分拒绝（真死，不重试）与超时（慢，重试 1 次）
+        refused = False
         try:
-            with socket.create_connection((ip, 443), timeout=timeout_sec):
-                passed.append(ip)
+            socket.create_connection((ip, 443), timeout=timeout_sec).close()
+        except (ConnectionRefusedError, ConnectionResetError):
+            refused = True
         except Exception:
             pass
+        if refused:
+            continue
+        time.sleep(2)
+        if _tcp443(ip, timeout_sec):
+            passed.append(ip)
     return passed
 
 
