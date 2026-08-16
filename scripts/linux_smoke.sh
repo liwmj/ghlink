@@ -4,7 +4,7 @@
 # 安全：全程备份 /etc/hosts，trap 保证任何退出路径都恢复基线；ghlink 段落式写入幂等。
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# CI（GitHub Actions macos runner）可用 $GITHUB_WORKSPACE 显式覆盖；本地自动反推仓库根
+# CI（GitHub Actions ubuntu runner）可用 $GITHUB_WORKSPACE 显式覆盖；本地自动反推仓库根
 REPO="${REPO:-$(dirname "$SCRIPT_DIR")}"
 PY="$REPO/.venv/bin/python"
 [ -x "$PY" ] || PY="python3"
@@ -164,7 +164,6 @@ for i in 1 2 3 4; do
   [ "$s" = "verifying" ] && break
   [ "$s" = "switching" ] && break
 done
-h1=$(python3 -c "import json;print(len(json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
 inject 127.0.0.1
 for i in 1 2 3; do
   $RUN_COOL >/dev/null 2>&1
