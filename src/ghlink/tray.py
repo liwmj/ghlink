@@ -119,19 +119,17 @@ def _make_icon(color: str, size: int = 64):
 def _refresh(icon: Any) -> None:
     """定时刷新：状态文件 → 图标颜色 + 菜单文字。
 
-    状态灯优先级：异常(红) > 切换/验证中(黄) > 值守启用且正常(绿) > 值守未启用(灰)。
+    状态灯只表达健康状态（李工 12:55 定规）：正常=绿 / 切换验证中=黄 / 异常=红；
+    值守开关状态（启用/未启用）由菜单文字与菜单项表达，不用颜色区分。
     """
     st = _load_state()
     s = st.get("state", "normal")
-    watching = service._is_enabled()
     if s in ("degraded",):
-        color = _COLOR["degraded"]           # 异常优先红（值守开关不覆盖）
+        color = _COLOR["degraded"]           # 异常红
     elif s in ("verifying", "switching"):
         color = _COLOR["verifying"]          # 切换/验证中黄
-    elif watching:
-        color = _COLOR["normal"]             # 值守启用且正常绿
     else:
-        color = _COLOR["disabled"]           # 值守未启用灰
+        color = _COLOR["normal"]             # 正常绿（值守开/关均为绿，值守状态看菜单文字）
     try:
         icon.icon = _make_icon(color)
         icon.title = _status_text()
