@@ -1,17 +1,17 @@
+<div align="center">
+  <img src="assets/ghlink-icon-128.png" width="96" alt="ghlink"/>
+  <h1>ghlink — GitHub 链路自愈工具</h1>
+  <p>当 GitHub 网络不稳定时，自动获取可用 IP 并替换 hosts，实现无感自愈。</p>
+</div>
+
 <p align="center">
-  <img src="assets/ghlink-icon-128.png" alt="ghlink logo" width="72">
+  [![CI](https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github)](https://github.com/liwmj/ghlink/actions/workflows/ci.yml)
+  [![版本](https://img.shields.io/github/v/release/liwmj/ghlink?label=%E7%89%88%E6%9C%AC&style=flat&logo=github)](https://github.com/liwmj/ghlink/releases)
+  [![License](https://img.shields.io/github/license/liwmj/ghlink?label=License&style=flat)](LICENSE)
+  [![平台](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat)](docs/DESIGN.md)
+  [![文档](https://img.shields.io/badge/docs-passing-brightgreen?style=flat)](docs/)
+  [![下载](https://img.shields.io/github/downloads/liwmj/ghlink/total?label=%E4%B8%8B%E8%BD%BD&style=flat)](https://github.com/liwmj/ghlink/releases)
 </p>
-
-# ghlink — GitHub 链路自愈工具
-
-> 当 GitHub 网络不稳定时，自动获取可用 IP 并替换 hosts，实现无感自愈。
-
-[![CI](https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github)](https://github.com/liwmj/ghlink/actions/workflows/ci.yml)
-[![版本](https://img.shields.io/github/v/release/liwmj/ghlink?label=%E7%89%88%E6%9C%AC&style=flat&logo=github)](https://github.com/liwmj/ghlink/releases)
-[![License](https://img.shields.io/github/license/liwmj/ghlink?label=License&style=flat)](LICENSE)
-[![平台](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat)](docs/DESIGN.md)
-[![文档](https://img.shields.io/badge/docs-passing-brightgreen?style=flat)](docs/)
-[![下载](https://img.shields.io/github/downloads/liwmj/ghlink/total?label=%E4%B8%8B%E8%BD%BD&style=flat)](https://github.com/liwmj/ghlink/releases)
 
 ---
 
