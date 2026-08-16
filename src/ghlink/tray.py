@@ -176,11 +176,32 @@ def _current_ip() -> str:
     return ip or "—"
 
 
+def _copy_ip(icon: Any, item: Any) -> None:
+    """点击 IP 菜单项：复制当前 IP 到剪贴板（李工 13:09 需求）。"""
+    import subprocess
+    ip = _current_ip()
+    if ip == "—":
+        _notify(icon, "暂无可用 IP")
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["clip"], input=ip.encode("utf-16le", errors="ignore") if False else ip.encode("utf-8"), check=False)
+        else:
+            subprocess.run(["pbcopy"], input=ip.encode("utf-8"), check=False)
+        _notify(icon, f"已复制: {ip}")
+    except Exception as exc:  # pragma: no cover
+        _notify(icon, f"复制失败: {exc}")
+
+
 def _build_menu():
     watching = service._is_enabled()
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
-        pystray.MenuItem(lambda _: f"当前 IP: {_current_ip()}", None, enabled=False),
+        pystray.MenuItem(
+            lambda _: f"当前 IP: {_current_ip()}（点击复制）",
+            _copy_ip,
+            default=True,   # 双击托盘图标默认动作 = 复制 IP
+        ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
             "停用值守" if watching else "启用值守",
