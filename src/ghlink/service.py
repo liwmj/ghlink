@@ -237,7 +237,13 @@ def _disable_macos() -> int:
 def _enable_windows() -> int:
     # P1 修复（赛博 2026-08-14）：参数数组传递，不用 split() 拆命令串——
     # /TR 的引号参数（含空格路径）必须作为单个元素，split() 会拆坏导致 schtasks 注册失败
-    tr = f"{sys.executable} -m ghlink.main {_config_path()}"
+    # 弹窗修复（李工 13:34 反馈）：值守用 windowed 入口（ghlink-watch.exe）静默跑，不弹命令行
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        watch = os.path.join(exe_dir, "ghlink-watch.exe")
+        tr = f'"{watch}" {_config_path()}'
+    else:
+        tr = f"{sys.executable} -m ghlink.main {_config_path()}"
     args = [
         "schtasks",
         "/Create",

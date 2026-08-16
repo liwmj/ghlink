@@ -64,15 +64,24 @@ def _icon_path() -> str:
     return ""
 
 
-def _config_path() -> str:
-    """托盘读取状态用的配置路径（与 service 一致）。"""
-    return (
-        service._config_path() if os.path.exists(service._config_path()) else "ghlink_status.json"
-    )
+def _state_path() -> str:
+    """状态文件路径：优先从 config.json 的 state_file 字段读取，否则默认 ghlink_status.json。"""
+    cfg_path = service._config_path()
+    st_path = "ghlink_status.json"
+    if os.path.exists(cfg_path):
+        try:
+            import json as _json
+
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            st_path = cfg.get("state_file", "ghlink_status.json")
+        except Exception:
+            pass
+    return st_path
 
 
 def _load_state() -> Dict[str, Any]:
-    p = _config_path()
+    p = _state_path()
     return state.load(p) if os.path.exists(p) else {}
 
 
