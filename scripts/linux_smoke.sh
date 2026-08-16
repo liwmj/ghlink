@@ -20,6 +20,13 @@ bad()  { FAIL=$((FAIL+1)); echo "❌ $1"; }
 
 flush() { resolvectl flush-caches 2>/dev/null || systemd-resolve --flush-caches 2>/dev/null || true; }
 
+# 打印 hosts 中 ghlink 段落（一眼核验写入 IP/格式；参数为段落标题）
+show_sec() {
+  echo "--- $1 ---"
+  awk '/# ghlink Start/,/# ghlink End/' "$HOSTS"
+  echo ""
+}
+
 # 剥离 hosts 中所有 ghlink 段落（幂等清理，保证注入前为干净基线）
 strip_ghlink() {
   python3 - "$HOSTS" <<'EOF'
@@ -113,15 +120,16 @@ if [ "$s" = "degraded" ]; then
 elif grep -q "ghlink Start" "$HOSTS" && ! grep -q "127.0.0.1 github.com" "$HOSTS"; then
   ip=$(grep "github.com" "$HOSTS" | grep -v "^#" | head -1 | awk '{print $1}')
   ok "② 切换成功写入新 IP: $ip (state=$s)"
-  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://github.com/ 2>/dev/null)
+  show_sec "hosts ghlink 段落"
+  code=$(curl -s --noproxy '*' -o /dev/null -w "%{http_code}" --max-time 8 https://github.com/ 2>/dev/null)
   [ "$code" = "200" ] && ok "② 切换后 github.com HTTP $code" || bad "② 切换后 HTTP=$code"
 else
   bad "② 切换未生效 (state=$s rc=$rc)"
-  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://github.com/ 2>/dev/null)
+  code=$(curl -s --noproxy '*' -o /dev/null -w "%{http_code}" --max-time 8 https://github.com/ 2>/dev/null)
   [ "$code" = "200" ] && ok "② 切换后 github.com HTTP $code" || bad "② 切换后 HTTP=$code"
 fi
 
-# ③ 回滚兜底：注入不可达 IP + 超短探测超时 → 写入后自检失败 → 自动回滚 + degraded
+# ③ 回滚兜底：注入不可达 IP + 超短探测超时 → 写入后自检失败 → 自动回滚（回滚到应用前状态，段落残留故障 IP 是正确语义）
 inject 203.0.113.1
 rm -f "$TMP/state.json"
 for i in 1 2 3; do
@@ -135,6 +143,7 @@ if [ "$s" = "degraded" ]; then
     *rolled*|*verify*) ok "③ 自检失败回滚 + degraded ($e)" ;;
     *) ok "③ degraded ($e)" ;;
   esac
+  show_sec "回滚后 hosts ghlink 段落"
 else
   bad "③ 未进入 degraded (state=$s err=$e)"
 fi
