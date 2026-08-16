@@ -29,11 +29,11 @@ except Exception:  # pragma: no cover - 未装依赖时
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
 _COLOR = {
-    "normal": "#34C759",
-    "verifying": "#FFD60A",
+    "normal": "#34C759",   # 绿=值守启用且正常（李工 12:58 定规：绿=值守启用）
+    "idle": "#007AFF",     # 蓝=正常但值守未启用（区别于绿）
+    "verifying": "#FFD60A",  # 黄=切换/验证中
     "switching": "#FFD60A",
-    "degraded": "#FF3B30",
-    "disabled": "#8E8E93",
+    "degraded": "#FF3B30",   # 红=异常
 }
 _TEXT = {
     "normal": "正常",
@@ -119,17 +119,19 @@ def _make_icon(color: str, size: int = 64):
 def _refresh(icon: Any) -> None:
     """定时刷新：状态文件 → 图标颜色 + 菜单文字。
 
-    状态灯只表达健康状态（李工 12:55 定规）：正常=绿 / 切换验证中=黄 / 异常=红；
-    值守开关状态（启用/未启用）由菜单文字与菜单项表达，不用颜色区分。
+    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换/验证中 > 绿=值守启用且正常 > 蓝=正常但值守未启用。
     """
     st = _load_state()
     s = st.get("state", "normal")
+    watching = service._is_enabled()
     if s in ("degraded",):
-        color = _COLOR["degraded"]           # 异常红
+        color = _COLOR["degraded"]           # 异常红（最高优先）
     elif s in ("verifying", "switching"):
         color = _COLOR["verifying"]          # 切换/验证中黄
+    elif watching:
+        color = _COLOR["normal"]             # 值守启用且正常绿
     else:
-        color = _COLOR["normal"]             # 正常绿（值守开/关均为绿，值守状态看菜单文字）
+        color = _COLOR["idle"]               # 正常但值守未启用蓝
     try:
         icon.icon = _make_icon(color)
         icon.title = _status_text()
