@@ -9,8 +9,8 @@
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.1.tar.gz"
-  sha256 "4a197fc20b05f5315393ed04bc5f86732865998baca43e5474f137781d94ed6a"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.8.tar.gz"
+  sha256 "65b01fb3f1fe05292c42345bad9f7504bd66173875c32d3d3de6b173c353c247"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
 
@@ -29,7 +29,7 @@ class Ghlink < Formula
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}:#{libexec}/vendor"
-      exec "#{py}" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
+      exec "#{py}" -m ghlink.main "$@"
     EOS
     chmod 0755, bin/"ghlink"
 

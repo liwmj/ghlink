@@ -14,17 +14,25 @@ import threading
 import time
 from typing import Any, Dict
 
+# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+from typing import Any as _Any
+
 from . import service, state
 
-# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+HAS_TRAY = False
 try:
-    import pystray
-    from PIL import Image, ImageDraw
+    import pystray as _pystray
+    from PIL import Image as _PILImage
+    from PIL import ImageDraw as _ImageDraw
 
+    pystray: _Any = _pystray
+    Image: _Any = _PILImage
+    ImageDraw: _Any = _ImageDraw
     HAS_TRAY = True
 except Exception:  # pragma: no cover - 未装依赖时
     pystray = None
     Image = None
+    ImageDraw = None
     HAS_TRAY = False
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
@@ -102,7 +110,7 @@ def _make_icon(color: str, size: int = 64):
         try:
             icon = Image.open(path).convert("RGBA")
             # contain 居中：保持比例不变形（横版图标贴入方形画布）
-            icon.thumbnail((size, size), Image.LANCZOS)
+            icon.thumbnail((size, size), Image.Resampling.LANCZOS)
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             img.paste(
                 icon,
@@ -220,17 +228,21 @@ def _quit_tray(icon: Any, item: Any) -> None:
     icon.stop()
 
 
-def _toggle_watch(icon: Any, item: Any) -> None:
-    """值守开关：复用 enable/disable 通道（Windows schtasks / macOS LaunchDaemon）。"""
+def _toggle_autostart(icon: Any, item: Any) -> None:
+    """开机自启动开关（李工 23:37 定规）：控制托盘是否随登录自动启动。
+
+    注意：托盘=值守总开关（方案 A）——打开托盘值守已启动，此开关只控制
+    「登录时是否自动拉起托盘」（Windows Run key / macOS LaunchAgent），
+    不控制值守本身。
+    """
     try:
-        watching = service._is_enabled()
-        if watching:
-            code = service.disable()
-            msg = "值守已停用" if code == 0 else f"停用失败(code={code})"
+        if service._is_autostart():
+            ok = service._disable_autostart()
+            msg = "开机自启动已关闭" if ok else "关闭失败"
         else:
-            code = service.enable()
-            msg = "值守已启用（1 分钟粒度）" if code == 0 else f"启用失败(code={code})"
-        if code != 0:
+            ok = service._enable_autostart()
+            msg = "开机自启动已开启" if ok else "开启失败"
+        if not ok:
             _notify(icon, msg)
     except Exception as exc:  # pragma: no cover
         _notify(icon, f"操作失败: {exc}")
@@ -272,7 +284,7 @@ def _hosts_ip() -> str:
 
 
 def _current_ip() -> str:
-    """当前生效 IP：state.current_ip 优先，history 兜底，再兜底 hosts 实际解析（赛博设计口径）。"""
+    """当前生效 IP：current_ip → history → hosts → 系统 DNS（v0.2.9 兜底链补全）。"""
     st = _load_state()
     ip = st.get("current_ip")
     if not ip and st.get("history"):
@@ -280,7 +292,15 @@ def _current_ip() -> str:
         ip = last.get("ip") if isinstance(last, dict) else last
     if not ip:
         ip = _hosts_ip()
-    return ip or "—"
+    if not ip:
+        try:
+            import socket as _socket
+
+            infos = _socket.getaddrinfo("github.com", None, _socket.AF_INET)
+            ip = infos[0][4][0]
+        except Exception:
+            pass
+    return str(ip) if ip else "—"
 
 
 def _copy_ip(icon: Any, item: Any) -> None:
@@ -303,6 +323,7 @@ def _copy_ip(icon: Any, item: Any) -> None:
 
 def _build_menu():
     watching = service._is_enabled()
+    autostart = service._is_autostart()
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
@@ -310,14 +331,19 @@ def _build_menu():
             _copy_ip,
             default=True,  # 双击托盘图标默认动作 = 复制 IP
         ),
-        pystray.Menu.SEPARATOR,
         pystray.MenuItem(
-            "停用值守" if watching else "启用值守",
-            _toggle_watch,
-            checked=lambda _: watching,
+            lambda _: f"值守: {'运行中' if watching else '未运行'}",
+            None,
+            enabled=False,
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("退出托盘（同时停值守）", _quit_tray),
+        pystray.MenuItem(
+            "开机自启动（随登录启动托盘）",
+            _toggle_autostart,
+            checked=lambda _: autostart,
+        ),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出托盘", _quit_tray),
     )
 
 
