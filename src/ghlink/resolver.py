@@ -6,6 +6,7 @@
 - 标准库 urllib 实现 DoH（GET /resolve?name=xxx&type=A，Accept: application/dns-json）
 """
 
+import errno
 import json
 import os
 import socket
@@ -86,7 +87,7 @@ def _precheck(ips: List[str], timeout_sec: float = 15.0) -> List[str]:
             continue  # 拒绝/重置 = 真死，不重试
         except OSError as exc:
             # 超时类（slow）→ 重试 1 次（间隔 2s）；其他 OSError 也重试一次兜底
-            if exc.errno in (socket.errno.ETIMEDOUT, socket.errno.EWOULDBLOCK, socket.errno.EAGAIN):
+            if exc.errno in (errno.ETIMEDOUT, errno.EWOULDBLOCK, errno.EAGAIN):
                 try:
                     time.sleep(2)
                     with socket.create_connection((ip, 443), timeout=timeout_sec):
