@@ -66,7 +66,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 ; 安装时预注册 SYSTEM 值守任务（默认 disabled，无窗口 ghlink-watch.exe）——
 ; 方案 A（李工 13:44/13:50 定调）：托盘=值守总开关，安装预注册后托盘启动只需启停 UAC
-Filename: "{cmd}"; Parameters: "/C schtasks /Create /TN ghlink /SC MINUTE /MO 1 /TR ""{app}\ghlink-watch.exe"" /RL HIGHEST /RU SYSTEM /F";   Description: "预注册 ghlink 值守任务（默认停用）"; Flags: runhidden nowait
+Filename: "{cmd}"; Parameters: "/C schtasks /Create /TN ghlink /SC MINUTE /MO 1 /TR ""{app}\ghlink-watch.exe"" /RL HIGHEST /RU SYSTEM /DISABLE /F";   Description: "预注册 ghlink 值守任务（默认停用 /DISABLE，托盘启动或勾选自启才启用）"; Flags: runhidden nowait
 ; 安装后：勾选自启则启用值守（schtasks）
 Filename: "{app}\{#MyAppExeName}"; Parameters: "enable"; \
   Description: "启用 ghlink 值守（开机自启）"; Flags: nowait postinstall skipifsilent; Tasks: autostart

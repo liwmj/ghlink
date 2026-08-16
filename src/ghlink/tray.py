@@ -151,25 +151,41 @@ def _refresh(icon: Any) -> None:
         pass
 
 
-def _run_privileged(cmd_args) -> bool:
-    """以管理员身份运行子命令（独立进程，托盘自身不退出）。
+def _cli_command(subcmd: str) -> list:
+    """构造 CLI 子命令（enable/disable）完整命令（P1-1：必须走 CLI 入口）。
+
+    - frozen（PyInstaller）：ghlink.exe enable/disable（ghlink.exe 是 console CLI 入口）
+    - dev：python -m ghlink.main enable/disable
+    不能用托盘入口（ghlink-tray.exe / tray.main）——托盘不解析 argv，拉起只会新开托盘实例。
+    """
+    if getattr(sys, "frozen", False):
+        exe = os.path.join(os.path.dirname(sys.executable), "ghlink.exe")
+        if os.path.exists(exe):
+            return [exe, subcmd]
+        # 兜底：frozen 但找不到 ghlink.exe（异常环境），退回当前解释器 + -m
+    return [sys.executable, "-m", "ghlink.main", subcmd]
+
+
+def _run_privileged(subcmd: str) -> bool:
+    """以管理员身份运行 CLI 子命令（独立进程，托盘自身不退出）。
 
     避免直接调 service.enable/disable——ensure_privilege() 提权成功会 sys.exit(0)
     退出当前进程，托盘会被误杀。Windows 走 ShellExecuteW runas 提权；
     已具管理员权限时直接 subprocess 跑。
     """
+    cmd = _cli_command(subcmd)
     try:
         if sys.platform == "win32" and not service._is_admin():
             import ctypes
 
-            params = " ".join(f'"{a}"' for a in cmd_args)
+            params = " ".join(f'"{a}"' for a in cmd)
             ret = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, params, None, 1
+                None, "runas", cmd[0], params, None, 1
             )
             return ret > 32
         import subprocess
 
-        r = subprocess.run(cmd_args, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         return r.returncode == 0
     except Exception:
         return False
@@ -193,7 +209,7 @@ def _quit_tray(icon: Any, item: Any) -> None:
             if ret != 6:  # IDYES
                 return
         if service._is_enabled():
-            _run_privileged(["disable"])
+            _run_privileged("disable")
     except Exception:
         pass
     icon.stop()
@@ -328,7 +344,7 @@ def main() -> int:
     # 方案 A（李工 13:44 定调）：托盘=值守总开关——启动时若值守未启用则自动开启（幂等）
     try:
         if not service._is_enabled():
-            ok = _run_privileged(["enable"])
+            ok = _run_privileged("enable")
             if ok:
                 _notify(icon, "值守已自动启用")
     except Exception:
