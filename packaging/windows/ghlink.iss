@@ -38,7 +38,7 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Source: "..\..\dist\windows\ghlink.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\windows\ghlink-tray.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\windows\ghlink-tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\assets\ghlink-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
