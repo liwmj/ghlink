@@ -38,11 +38,12 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Source: "..\..\dist\windows\ghlink.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\windows\ghlink-tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"
+Name: "{group}\ghlink"; Filename: "{app}\ghlink-tray.exe"
 Name: "{group}\ghlink 使用说明"; Filename: "{app}\README.md"
-Name: "{autodesktop}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"; Tasks: desktopicon
+Name: "{autodesktop}\ghlink"; Filename: "{app}\ghlink-tray.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
@@ -58,14 +59,14 @@ Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Path"; \
 
 ; 托盘开机自启（用户级 Run key，随登录启动作 UI 载体）
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ghlink-tray"; \
-  ValueData: """{app}\ghlink.exe"" tray"; Flags: uninsdeletevalue; Tasks: autostart
+  ValueData: """{app}\ghlink-tray.exe"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
 ; 安装后：勾选自启则注册值守（schtasks）
 Filename: "{app}\{#MyAppExeName}"; Parameters: "enable"; \
   Description: "启用 ghlink 值守（开机自启）"; Flags: nowait postinstall skipifsilent; Tasks: autostart
 ; 启动托盘
-Filename: "{app}\{#MyAppExeName}"; Parameters: "tray"; \
+Filename: "{app}\ghlink-tray.exe"; \
   Description: "启动 ghlink 托盘"; Flags: nowait postinstall skipifsilent
 ; 可选：查看状态
 Filename: "{app}\{#MyAppExeName}"; Parameters: "status"; \
