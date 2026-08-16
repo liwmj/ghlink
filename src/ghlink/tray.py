@@ -64,15 +64,24 @@ def _icon_path() -> str:
     return ""
 
 
-def _config_path() -> str:
-    """托盘读取状态用的配置路径（与 service 一致）。"""
-    return (
-        service._config_path() if os.path.exists(service._config_path()) else "ghlink_status.json"
-    )
+def _state_path() -> str:
+    """状态文件路径：优先从 config.json 的 state_file 字段读取，否则默认 ghlink_status.json。"""
+    cfg_path = service._config_path()
+    st_path = "ghlink_status.json"
+    if os.path.exists(cfg_path):
+        try:
+            import json as _json
+
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            st_path = cfg.get("state_file", "ghlink_status.json")
+        except Exception:
+            pass
+    return st_path
 
 
 def _load_state() -> Dict[str, Any]:
-    p = _config_path()
+    p = _state_path()
     return state.load(p) if os.path.exists(p) else {}
 
 
@@ -167,13 +176,41 @@ def _notify(icon: Any, text: str) -> None:
         pass
 
 
+def _hosts_ip() -> str:
+    """hosts 里当前生效的 github.com IP（未切换时兜底显示，赛博 13:35 设计口径）。"""
+    try:
+        import platform as _platform
+
+        hosts_path = "/etc/hosts"
+        if _platform.system() == "Windows":
+            import os as _os
+
+            root = _os.environ.get("SYSTEMROOT", r"C:\Windows")
+            hosts_path = _os.path.join(root, "System32", "drivers", "etc", "hosts")
+        with open(hosts_path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and "github.com" in parts[1:]:
+                    ip = parts[0]
+                    if ip not in ("127.0.0.1", "::1", "0.0.0.0"):
+                        return ip
+    except Exception:
+        pass
+    return ""
+
+
 def _current_ip() -> str:
-    """当前生效 IP：state.current_ip 优先，history 最后一条兜底。"""
+    """当前生效 IP：state.current_ip 优先，history 兜底，再兜底 hosts 实际解析（赛博设计口径）。"""
     st = _load_state()
     ip = st.get("current_ip")
     if not ip and st.get("history"):
         last = st["history"][-1]
         ip = last.get("ip") if isinstance(last, dict) else last
+    if not ip:
+        ip = _hosts_ip()
     return ip or "—"
 
 

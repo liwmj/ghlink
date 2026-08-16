@@ -2,6 +2,7 @@
 
 由 ghlink-tray.exe（console=False）使用：直接进托盘，不显示命令行窗口。
 """
+
 import sys
 from pathlib import Path
 
