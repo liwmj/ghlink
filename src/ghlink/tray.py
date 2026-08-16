@@ -179,9 +179,7 @@ def _run_privileged(subcmd: str) -> bool:
             import ctypes
 
             params = " ".join(f'"{a}"' for a in cmd)
-            ret = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", cmd[0], params, None, 1
-            )
+            ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", cmd[0], params, None, 1)
             return ret > 32
         import subprocess
 
@@ -208,6 +206,13 @@ def _quit_tray(icon: Any, item: Any) -> None:
             )
             if ret != 6:  # IDYES
                 return
+        elif sys.platform == "darwin":
+            # macOS 无 MessageBoxW：用 notification + 延时确认（简单版）
+            try:
+                icon.notify("退出托盘将同时停用 ghlink 值守", "ghlink")
+                time.sleep(2)
+            except Exception:
+                pass
         if service._is_enabled():
             _run_privileged("disable")
     except Exception:
@@ -341,12 +346,23 @@ def main() -> int:
         _status_text(),
         menu=_build_menu(),
     )
+
     # 方案 A（李工 13:44 定调）：托盘=值守总开关——启动时若值守未启用则自动开启（幂等）
+    # P2-①：enable 的 UAC 弹窗与 icon.run() 前移可能被吞，通知延迟到 run 后线程（避免无效 notify）
+    def _auto_enable():
+        time.sleep(3)  # 等托盘 UI 就绪
+        try:
+            if not service._is_enabled() and _run_privileged("enable"):
+                try:
+                    icon.notify("值守已自动启用", "ghlink")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     try:
         if not service._is_enabled():
-            ok = _run_privileged("enable")
-            if ok:
-                _notify(icon, "值守已自动启用")
+            threading.Thread(target=_auto_enable, daemon=True).start()
     except Exception:
         pass
     # 状态轮询线程（5s），UI 主循环不阻塞
