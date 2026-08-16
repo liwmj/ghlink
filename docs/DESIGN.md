@@ -166,19 +166,24 @@
 
 见 [docs/REVIEW-v0.1.md](REVIEW-v0.1.md)（P0×3 / P1×3 / P2×3 全部修复闭环）
 
-### 设计决策：值守调度与托盘 UI 解耦（2026-08-16 李工定调）
+### 设计决策：托盘 = 值守总开关（2026-08-16 李工定调 + 方案 A 终裁）
 
-三个概念相互独立，禁止耦合：
+语义模型：托盘运行即值守生效，托盘是值守的统一开关。
 
-- **开机启动**（autostart）：Windows Run 键 → 登录时拉起托盘（ghlink-tray.exe）。只管「托盘随登录出现」。
-- **enable 值守**：schtasks 1 分钟调度任务，后台持续探测 + 自愈。只管「守护跑不跑」。
-- **托盘运行**：纯 UI 载体（状态灯 / 当前 IP / 开关按钮），每 5 秒读一次状态文件刷图标，**本身不做网络探测**。
+- **开机启动**（autostart）：Windows Run 键 → 登录时拉起托盘（ghlink-tray.exe）。
+- **托盘 = 总开关**：托盘启动时若值守未启用则自动开启（幂等）；托盘退出（确认后）停用值守。
+- **enable 值守**：底层 schtasks SYSTEM 任务（无窗口 ghlink-watch.exe），1 分钟探测+自愈。
 
-硬性约束：
-1. 托盘启动不得隐式调用 enable（托盘开着 ≠ 值守开启）
-2. 值守调度（schtasks）不得依赖托盘进程存活（托盘退出 ≠ 值守停止）
-3. 托盘菜单开关 = 手动调用 enable/disable 通道，仅反映状态不自行开启
-4. 值守调度入口走 windowed（ghlink-watch.exe）静默执行，不弹命令行窗口
+权限模型（路线 A，李工 13:50 拍板）：
+1. 安装时（向导本需 admin）预注册 SYSTEM 值守任务（默认 disabled）
+2. 托盘普通权限常驻；启动/退出值守各触发一次 UAC（独立提权子进程，托盘不被误杀）
+3. 提权失败不阻塞托盘，降级为菜单提示「值守未开启，点此启用」
+4. 值守调度入口 windowed（ghlink-watch.exe）静默执行，不弹命令行窗口
+
+实现约束：
+1. 托盘自动 enable 用独立提权进程（ShellExecuteW runas / subprocess），不得直接调 service.enable（ensure_privilege 会 exit 托盘）
+2. 托盘启动 enable 幂等（已启用则跳过）；退出 disable 幂等
+3. 写 hosts（自愈核心动作）需管理员——值守跑在 SYSTEM 任务内，天然满足
 
 ## 9. 已知边界与 v0.2 规划
 
