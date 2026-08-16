@@ -220,17 +220,21 @@ def _quit_tray(icon: Any, item: Any) -> None:
     icon.stop()
 
 
-def _toggle_watch(icon: Any, item: Any) -> None:
-    """值守开关：复用 enable/disable 通道（Windows schtasks / macOS LaunchDaemon）。"""
+def _toggle_autostart(icon: Any, item: Any) -> None:
+    """开机自启动开关（李工 23:37 定规）：控制托盘是否随登录自动启动。
+
+    注意：托盘=值守总开关（方案 A）——打开托盘值守已启动，此开关只控制
+    「登录时是否自动拉起托盘」（Windows Run key / macOS LaunchAgent），
+    不控制值守本身。
+    """
     try:
-        watching = service._is_enabled()
-        if watching:
-            code = service.disable()
-            msg = "值守已停用" if code == 0 else f"停用失败(code={code})"
+        if service._is_autostart():
+            ok = service._disable_autostart()
+            msg = "开机自启动已关闭" if ok else "关闭失败"
         else:
-            code = service.enable()
-            msg = "值守已启用（1 分钟粒度）" if code == 0 else f"启用失败(code={code})"
-        if code != 0:
+            ok = service._enable_autostart()
+            msg = "开机自启动已开启" if ok else "开启失败"
+        if not ok:
             _notify(icon, msg)
     except Exception as exc:  # pragma: no cover
         _notify(icon, f"操作失败: {exc}")
@@ -303,6 +307,7 @@ def _copy_ip(icon: Any, item: Any) -> None:
 
 def _build_menu():
     watching = service._is_enabled()
+    autostart = service._is_autostart()
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
@@ -310,14 +315,19 @@ def _build_menu():
             _copy_ip,
             default=True,  # 双击托盘图标默认动作 = 复制 IP
         ),
-        pystray.Menu.SEPARATOR,
         pystray.MenuItem(
-            "停用值守" if watching else "启用值守",
-            _toggle_watch,
-            checked=lambda _: watching,
+            lambda _: f"值守: {'运行中' if watching else '未运行'}",
+            None,
+            enabled=False,
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("退出托盘（同时停值守）", _quit_tray),
+        pystray.MenuItem(
+            "开机自启动（随登录启动托盘）",
+            _toggle_autostart,
+            checked=lambda _: autostart,
+        ),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出托盘", _quit_tray),
     )
 
 

@@ -133,6 +133,105 @@ def _hosts_github_ip() -> str:
     return ""
 
 
+def _is_autostart() -> bool:
+    """检测开机自启动是否已注册（Windows Run key / macOS LaunchAgent / Linux .desktop）。"""
+    try:
+        if sys.platform == "win32":
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+            ) as key:
+                winreg.QueryValueEx(key, "ghlink-tray")
+                return True
+        elif sys.platform == "darwin":
+            return os.path.exists(
+                os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+            )
+        else:
+            return os.path.exists(os.path.expanduser("~/.config/autostart/ghlink-tray.desktop"))
+    except Exception:
+        return False
+
+
+def _enable_autostart() -> bool:
+    """注册开机自启动（托盘随登录启动）。用户级，无需提权。"""
+    try:
+        if sys.platform == "win32":
+            import winreg
+
+            exe = os.path.join(os.path.dirname(sys.executable), "ghlink-tray.exe")
+            if not os.path.exists(exe):
+                exe = sys.executable
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+            ) as key:
+                winreg.SetValueEx(key, "ghlink-tray", 0, winreg.REG_SZ, f'"{exe}"')
+            return True
+        elif sys.platform == "darwin":
+            plist_dir = os.path.expanduser("~/Library/LaunchAgents")
+            os.makedirs(plist_dir, exist_ok=True)
+            plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
+            exe = os.path.join(os.path.dirname(sys.executable), "ghlink-tray")
+            if not os.path.exists(exe):
+                exe = sys.executable
+            with open(plist, "w", encoding="utf-8") as f:
+                f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ghlink.tray</string>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+""")
+            import subprocess as _sp
+
+            _sp.run(["launchctl", "load", plist], check=False)
+            return True
+        else:
+            autostart_dir = os.path.expanduser("~/.config/autostart")
+            os.makedirs(autostart_dir, exist_ok=True)
+            desktop = os.path.join(autostart_dir, "ghlink-tray.desktop")
+            with open(desktop, "w", encoding="utf-8") as f:
+                f.write("[Desktop Entry]\nType=Application\nName=ghlink tray\nExec=ghlink tray\n")
+            return True
+    except Exception:
+        return False
+
+
+def _disable_autostart() -> bool:
+    """移除开机自启动。"""
+    try:
+        if sys.platform == "win32":
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_SET_VALUE,
+            ) as key:
+                winreg.DeleteValue(key, "ghlink-tray")
+            return True
+        elif sys.platform == "darwin":
+            plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+            import subprocess as _sp
+
+            _sp.run(["launchctl", "unload", plist], check=False)
+            if os.path.exists(plist):
+                os.remove(plist)
+            return True
+        else:
+            desktop = os.path.expanduser("~/.config/autostart/ghlink-tray.desktop")
+            if os.path.exists(desktop):
+                os.remove(desktop)
+            return True
+    except Exception:
+        return False
+
+
 def _is_enabled() -> bool:
     """检测定时任务是否已注册。"""
     try:
