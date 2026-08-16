@@ -1,13 +1,13 @@
 #!/bin/bash
 # build_deb.sh — ghlink .deb 打包脚本（v0.2.0）
 # 用法: bash packaging/build_deb.sh  （在仓库根目录执行）
-# 输出: dist/ghlink_0.2.1-1_all.deb
+# 输出: dist/ghlink_0.2.10-1_all.deb
 # 说明: 复用拂晓 Ubuntu 验证过的构建树（DEBIAN/ + usr/bin + usr/lib + etc + usr/share）
 
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.2.1"
+VERSION="0.2.10"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 
