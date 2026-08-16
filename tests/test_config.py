@@ -18,7 +18,7 @@ class TestLoadDefaults:
         assert set(["probe", "trigger", "resolver", "notify"]).issubset(cfg)
         assert cfg["trigger"]["consecutive_failures"] == 3
         assert cfg["trigger"]["cooldown_min"] == 15
-        assert cfg["probe"]["timeout_sec"] == 5
+        assert cfg["probe"]["timeout_sec"] == 15
 
     def test_alert_default_enabled(self, tmp_path):
         cfg = config.load_config(str(tmp_path / "nope.json"))
@@ -35,7 +35,7 @@ class TestLoadDefaults:
 class TestLoadExample:
     def test_loads_example_values(self, example_config):
         cfg = config.load_config(example_config)
-        assert cfg["probe"]["timeout_sec"] == 5
+        assert cfg["probe"]["timeout_sec"] == 15
         assert cfg["resolver"]["cache_ttl_sec"] == 3600
         assert cfg["resolver"]["max_candidates"] == 5
         assert cfg["trigger"]["verify_success_rounds"] == 2

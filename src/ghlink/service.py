@@ -85,9 +85,10 @@ def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
     st = state.load(_config_path() if os.path.exists(_config_path()) else "ghlink_status.json")
     watching = _is_enabled()
+    cur_ip = st.get("current_ip") or _hosts_github_ip()
     print("=== ghlink status ===")
     print(f"状态: {st.get('state', 'normal')}")
-    print(f"当前IP: {st.get('current_ip') or '-'}")
+    print(f"当前IP: {cur_ip or '-'}")
     print(f"失败计数: {st.get('probe', {}).get('consecutive_failures', 0)}")
     print(f"最近错误: {st.get('last_error') or '-'}")
     switched = st.get("switched_at")
@@ -105,6 +106,31 @@ def status() -> int:
                 f"({h.get('trigger', '')})"
             )
     return 0
+
+
+def _hosts_github_ip() -> str:
+    """hosts 里当前生效的 github.com IP（未切换时兜底显示，与托盘口径一致 v0.2.8）。"""
+    try:
+        import os as _os
+
+        if sys.platform == "win32":
+            root = _os.environ.get("SYSTEMROOT", r"C:\Windows")
+            hosts_path = _os.path.join(root, "System32", "drivers", "etc", "hosts")
+        else:
+            hosts_path = "/etc/hosts"
+        with open(hosts_path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and "github.com" in parts[1:]:
+                    ip = parts[0]
+                    if ip not in ("127.0.0.1", "::1", "0.0.0.0"):
+                        return ip
+    except Exception:
+        pass
+    return ""
 
 
 def _is_enabled() -> bool:
