@@ -151,6 +151,75 @@ def _refresh(icon: Any) -> None:
         pass
 
 
+def _cli_command(subcmd: str) -> list:
+    """构造 CLI 子命令（enable/disable）完整命令（P1-1：必须走 CLI 入口）。
+
+    - frozen（PyInstaller）：ghlink.exe enable/disable（ghlink.exe 是 console CLI 入口）
+    - dev：python -m ghlink.main enable/disable
+    不能用托盘入口（ghlink-tray.exe / tray.main）——托盘不解析 argv，拉起只会新开托盘实例。
+    """
+    if getattr(sys, "frozen", False):
+        exe = os.path.join(os.path.dirname(sys.executable), "ghlink.exe")
+        if os.path.exists(exe):
+            return [exe, subcmd]
+        # 兜底：frozen 但找不到 ghlink.exe（异常环境），退回当前解释器 + -m
+    return [sys.executable, "-m", "ghlink.main", subcmd]
+
+
+def _run_privileged(subcmd: str) -> bool:
+    """以管理员身份运行 CLI 子命令（独立进程，托盘自身不退出）。
+
+    避免直接调 service.enable/disable——ensure_privilege() 提权成功会 sys.exit(0)
+    退出当前进程，托盘会被误杀。Windows 走 ShellExecuteW runas 提权；
+    已具管理员权限时直接 subprocess 跑。
+    """
+    cmd = _cli_command(subcmd)
+    try:
+        if sys.platform == "win32" and not service._is_admin():
+            import ctypes
+
+            params = " ".join(f'"{a}"' for a in cmd)
+            ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", cmd[0], params, None, 1)
+            return ret > 32
+        import subprocess
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _quit_tray(icon: Any, item: Any) -> None:
+    """退出托盘 = 停值守（方案 A 语义：托盘=值守总开关）。
+
+    确认提示 → disable（独立提权进程，UAC 一次）→ 托盘退出。
+    """
+    try:
+        import ctypes as _ct
+
+        if sys.platform == "win32":
+            ret = _ct.windll.user32.MessageBoxW(
+                None,
+                "退出托盘将同时停用 ghlink 值守。确定退出？",
+                "ghlink",
+                0x4 | 0x20,  # MB_YESNO | MB_ICONQUESTION
+            )
+            if ret != 6:  # IDYES
+                return
+        elif sys.platform == "darwin":
+            # macOS 无 MessageBoxW：用 notification + 延时确认（简单版）
+            try:
+                icon.notify("退出托盘将同时停用 ghlink 值守", "ghlink")
+                time.sleep(2)
+            except Exception:
+                pass
+        if service._is_enabled():
+            _run_privileged("disable")
+    except Exception:
+        pass
+    icon.stop()
+
+
 def _toggle_watch(icon: Any, item: Any) -> None:
     """值守开关：复用 enable/disable 通道（Windows schtasks / macOS LaunchDaemon）。"""
     try:
@@ -248,7 +317,7 @@ def _build_menu():
             checked=lambda _: watching,
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("退出托盘", lambda icon, item: icon.stop()),
+        pystray.MenuItem("退出托盘（同时停值守）", _quit_tray),
     )
 
 
@@ -277,6 +346,25 @@ def main() -> int:
         _status_text(),
         menu=_build_menu(),
     )
+
+    # 方案 A（李工 13:44 定调）：托盘=值守总开关——启动时若值守未启用则自动开启（幂等）
+    # P2-①：enable 的 UAC 弹窗与 icon.run() 前移可能被吞，通知延迟到 run 后线程（避免无效 notify）
+    def _auto_enable():
+        time.sleep(3)  # 等托盘 UI 就绪
+        try:
+            if not service._is_enabled() and _run_privileged("enable"):
+                try:
+                    icon.notify("值守已自动启用", "ghlink")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        if not service._is_enabled():
+            threading.Thread(target=_auto_enable, daemon=True).start()
+    except Exception:
+        pass
     # 状态轮询线程（5s），UI 主循环不阻塞
     t = threading.Thread(target=_poll, args=(icon,), daemon=True)
     t.start()

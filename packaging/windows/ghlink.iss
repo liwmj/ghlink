@@ -50,7 +50,7 @@ Name: "{autodesktop}\ghlink"; Filename: "{app}\ghlink-tray.exe"; IconFilename: "
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
 ; 李工 15:29 定规：默认不自启（不勾选），用户通过托盘右键开关或 ghlink enable 开启
-Name: "autostart"; Description: "开机自动启用值守（ghlink enable，需勾选才自启）"; GroupDescription: "附加任务:"; Flags: unchecked
+Name: "autostart"; Description: "开机自动启动托盘并启用值守（ghlink enable，需勾选才自启）"; GroupDescription: "附加任务:"; Flags: unchecked
 
 [Registry]
 ; 注册 ghlink 到 PATH（用户级）
@@ -64,7 +64,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   ValueData: """{app}\ghlink-tray.exe"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-; 安装后：勾选自启则注册值守（schtasks）
+; 安装时预注册 SYSTEM 值守任务（默认 disabled，无窗口 ghlink-watch.exe）——
+; 方案 A（李工 13:44/13:50 定调）：托盘=值守总开关，安装预注册后托盘启动只需启停 UAC
+Filename: "{cmd}"; Parameters: "/C schtasks /Create /TN ghlink /SC MINUTE /MO 1 /TR ""{app}\ghlink-watch.exe"" /RL HIGHEST /RU SYSTEM /DISABLE /F";   Description: "预注册 ghlink 值守任务（默认停用 /DISABLE，托盘启动或勾选自启才启用）"; Flags: runhidden nowait
+; 安装后：勾选自启则启用值守（schtasks）
 Filename: "{app}\{#MyAppExeName}"; Parameters: "enable"; \
   Description: "启用 ghlink 值守（开机自启）"; Flags: nowait postinstall skipifsilent; Tasks: autostart
 ; 启动托盘
