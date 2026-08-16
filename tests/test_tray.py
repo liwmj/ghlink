@@ -27,7 +27,7 @@ def test_status_text(tmp_path, monkeypatch):
     """状态文本拼接：状态 + 值守。"""
     st_file = tmp_path / "state.json"
     st_file.write_text(json.dumps({"state": "degraded"}), encoding="utf-8")
-    monkeypatch.setattr(tray, "_config_path", lambda: str(st_file))
+    monkeypatch.setattr(tray, "_state_path", lambda: str(st_file))
     monkeypatch.setattr(tray.service, "_is_enabled", lambda: False)
     text = tray._status_text()
     assert "降级" in text

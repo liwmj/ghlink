@@ -180,13 +180,13 @@ def _hosts_ip() -> str:
     """hosts 里当前生效的 github.com IP（未切换时兜底显示，赛博 13:35 设计口径）。"""
     try:
         import platform as _platform
+
         hosts_path = "/etc/hosts"
         if _platform.system() == "Windows":
             import os as _os
+
             root = _os.environ.get("SYSTEMROOT", r"C:\Windows")
-            hosts_path = _os.path.join(
-                root, "System32", "drivers", "etc", "hosts"
-            )
+            hosts_path = _os.path.join(root, "System32", "drivers", "etc", "hosts")
         with open(hosts_path, encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
