@@ -29,11 +29,11 @@ except Exception:  # pragma: no cover - 未装依赖时
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
 _COLOR = {
-    "normal": "#34C759",
-    "verifying": "#FFD60A",
+    "normal": "#34C759",  # 绿=值守启用且正常（李工 12:58 定规：绿=值守启用）
+    "idle": "#007AFF",  # 蓝=正常但值守未启用（区别于绿）
+    "verifying": "#FFD60A",  # 黄=切换/验证中
     "switching": "#FFD60A",
-    "degraded": "#FF3B30",
-    "disabled": "#8E8E93",
+    "degraded": "#FF3B30",  # 红=异常
 }
 _TEXT = {
     "normal": "正常",
@@ -117,13 +117,21 @@ def _make_icon(color: str, size: int = 64):
 
 
 def _refresh(icon: Any) -> None:
-    """定时刷新：状态文件 → 图标颜色 + 菜单文字。"""
+    """定时刷新：状态文件 → 图标颜色 + 菜单文字。
+
+    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    """
     st = _load_state()
     s = st.get("state", "normal")
     watching = service._is_enabled()
-    color = _COLOR.get(s, "#8E8E93")
-    if not watching:
-        color = _COLOR["disabled"]
+    if s in ("degraded",):
+        color = _COLOR["degraded"]  # 异常红（最高优先）
+    elif s in ("verifying", "switching"):
+        color = _COLOR["verifying"]  # 切换/验证中黄
+    elif watching:
+        color = _COLOR["normal"]  # 值守启用且正常绿
+    else:
+        color = _COLOR["idle"]  # 正常但值守未启用蓝
     try:
         icon.icon = _make_icon(color)
         icon.title = _status_text()
@@ -159,10 +167,43 @@ def _notify(icon: Any, text: str) -> None:
         pass
 
 
+def _current_ip() -> str:
+    """当前生效 IP：state.current_ip 优先，history 最后一条兜底。"""
+    st = _load_state()
+    ip = st.get("current_ip")
+    if not ip and st.get("history"):
+        last = st["history"][-1]
+        ip = last.get("ip") if isinstance(last, dict) else last
+    return ip or "—"
+
+
+def _copy_ip(icon: Any, item: Any) -> None:
+    """点击 IP 菜单项：复制当前 IP 到剪贴板（李工 13:09 需求）。"""
+    import subprocess
+
+    ip = _current_ip()
+    if ip == "—":
+        _notify(icon, "暂无可用 IP")
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["clip"], input=ip.encode("utf-8"), check=False)
+        else:
+            subprocess.run(["pbcopy"], input=ip.encode("utf-8"), check=False)
+        _notify(icon, f"已复制: {ip}")
+    except Exception as exc:  # pragma: no cover
+        _notify(icon, f"复制失败: {exc}")
+
+
 def _build_menu():
     watching = service._is_enabled()
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
+        pystray.MenuItem(
+            lambda _: f"当前 IP: {_current_ip()}（点击复制）",
+            _copy_ip,
+            default=True,  # 双击托盘图标默认动作 = 复制 IP
+        ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
             "停用值守" if watching else "启用值守",

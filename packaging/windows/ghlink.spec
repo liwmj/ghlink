@@ -30,7 +30,25 @@ a = Analysis(
     noarchive=False,
 )
 
+# 托盘专用 Analysis（windowed 入口，复用同一份依赖收集）
+a_tray = Analysis(
+    [str(ROOT / "packaging" / "windows" / "ghlink_tray_entry.py")],
+    pathex=[str(SRC)],
+    binaries=[],
+    datas=[
+        (str(ROOT / "config.example.json"), "."),
+        (str(ROOT / "assets" / "ghlink-icon.png"), "assets"),
+    ],
+    hiddenimports=["pystray", "PIL"],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["pytest", "tests"],
+    noarchive=False,
+)
+
 pyz = PYZ(a.pure)
+pyz_tray = PYZ(a_tray.pure)
 
 exe = EXE(
     pyz,
@@ -46,6 +64,29 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,          # CLI 工具保留控制台（status/日志可见）
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=str(ROOT / "assets" / "ghlink-icon.ico"),
+)
+
+# 托盘专用 exe：windowed 无控制台窗口（李工 12:52 需求：托盘常驻不弹命令行）
+exe_tray = EXE(
+    pyz_tray,
+    a_tray.scripts,
+    a_tray.binaries,
+    a_tray.datas,
+    [],
+    name="ghlink-tray",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,         # windowed：无命令行窗口
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

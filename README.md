@@ -5,12 +5,12 @@
 </div>
 
 <p align="center">
-  [![CI](https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github)](https://github.com/liwmj/ghlink/actions/workflows/ci.yml)
-  [![版本](https://img.shields.io/github/v/release/liwmj/ghlink?label=%E7%89%88%E6%9C%AC&style=flat&logo=github)](https://github.com/liwmj/ghlink/releases)
-  [![License](https://img.shields.io/github/license/liwmj/ghlink?label=License&style=flat)](LICENSE)
-  [![平台](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat)](docs/DESIGN.md)
-  [![文档](https://img.shields.io/badge/docs-passing-brightgreen?style=flat)](docs/)
-  [![下载](https://img.shields.io/github/downloads/liwmj/ghlink/total?label=%E4%B8%8B%E8%BD%BD&style=flat)](https://github.com/liwmj/ghlink/releases)
+  <a href="https://github.com/liwmj/ghlink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/liwmj/ghlink/ci.yml?label=CI&style=flat&logo=github" alt="CI"/></a>
+  <a href="https://github.com/liwmj/ghlink/releases"><img src="https://img.shields.io/github/v/release/liwmj/ghlink?label=%E7%89%88%E6%9C%AC&style=flat&logo=github" alt="版本"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/liwmj/ghlink?label=License&style=flat" alt="License"/></a>
+  <a href="docs/DESIGN.md"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat" alt="平台"/></a>
+  <a href="docs/"><img src="https://img.shields.io/badge/docs-passing-brightgreen?style=flat" alt="文档"/></a>
+  <a href="https://github.com/liwmj/ghlink/releases"><img src="https://img.shields.io/github/downloads/liwmj/ghlink/total?label=%E4%B8%8B%E8%BD%BD&style=flat" alt="下载"/></a>
 </p>
 
 ---
