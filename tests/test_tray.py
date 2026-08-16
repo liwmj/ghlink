@@ -35,6 +35,6 @@ def test_status_text(tmp_path, monkeypatch):
 
 
 def test_color_map():
-    """状态 → 颜色映射齐全。"""
-    for s in ("normal", "verifying", "switching", "degraded", "disabled"):
+    """状态 → 颜色映射齐全（四色定稿：红/黄/绿/蓝）。"""
+    for s in ("normal", "idle", "verifying", "switching", "degraded"):
         assert tray._COLOR[s].startswith("#")
