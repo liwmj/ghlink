@@ -9,8 +9,8 @@
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.8.tar.gz"
-  sha256 "65b01fb3f1fe05292c42345bad9f7504bd66173875c32d3d3de6b173c353c247"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.10.tar.gz"
+  sha256 "8f5eee06cd8b941eaf1e470bd2b8026af8214fdbfe6d25502dde375b02e004e0"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
 
@@ -23,7 +23,7 @@ class Ghlink < Formula
 
     # 托盘依赖（pystray + Pillow）仅注入安装包：pip 装到 libexec/vendor，核心源码保持零依赖
     py = Formula["python@3.12"].opt_bin/"python3.12"
-    system py, "-m", "pip", "install", "--target", libexec/"vendor", "--quiet", "pystray", "Pillow"
+    system py, "-m", "pip", "install", "--target", libexec/"vendor", "--no-input", "--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple", "pystray", "Pillow"
 
     # bin 入口：绝对导入 wrapper（仿 ghlink_entry.py）+ PYTHONPATH 注入 libexec + vendor
     (bin/"ghlink").write <<~EOS
