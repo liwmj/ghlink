@@ -176,13 +176,41 @@ def _notify(icon: Any, text: str) -> None:
         pass
 
 
+def _hosts_ip() -> str:
+    """hosts 里当前生效的 github.com IP（未切换时兜底显示，赛博 13:35 设计口径）。"""
+    try:
+        import platform as _platform
+        hosts_path = "/etc/hosts"
+        if _platform.system() == "Windows":
+            import os as _os
+            root = _os.environ.get("SYSTEMROOT", r"C:\Windows")
+            hosts_path = _os.path.join(
+                root, "System32", "drivers", "etc", "hosts"
+            )
+        with open(hosts_path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and "github.com" in parts[1:]:
+                    ip = parts[0]
+                    if ip not in ("127.0.0.1", "::1", "0.0.0.0"):
+                        return ip
+    except Exception:
+        pass
+    return ""
+
+
 def _current_ip() -> str:
-    """当前生效 IP：state.current_ip 优先，history 最后一条兜底。"""
+    """当前生效 IP：state.current_ip 优先，history 兜底，再兜底 hosts 实际解析（赛博设计口径）。"""
     st = _load_state()
     ip = st.get("current_ip")
     if not ip and st.get("history"):
         last = st["history"][-1]
         ip = last.get("ip") if isinstance(last, dict) else last
+    if not ip:
+        ip = _hosts_ip()
     return ip or "—"
 
 
