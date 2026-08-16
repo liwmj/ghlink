@@ -72,6 +72,47 @@ exe = EXE(
     icon=str(ROOT / "assets" / "ghlink-icon.ico"),
 )
 
+# 值守专用 exe：windowed 无控制台窗口（李工 13:34 反馈：schtasks 弹窗反复）
+a_watch = Analysis(
+    [str(ROOT / "packaging" / "windows" / "ghlink_watch_entry.py")],
+    pathex=[str(SRC)],
+    binaries=[],
+    datas=[
+        (str(ROOT / "config.example.json"), "."),
+        (str(ROOT / "assets" / "ghlink-icon.png"), "assets"),
+    ],
+    hiddenimports=["pystray", "PIL"],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["pytest", "tests"],
+    noarchive=False,
+)
+
+pyz_watch = PYZ(a_watch.pure)
+
+exe_watch = EXE(
+    pyz_watch,
+    a_watch.scripts,
+    a_watch.binaries,
+    a_watch.datas,
+    [],
+    name="ghlink-watch",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,         # windowed：值守静默运行不弹窗
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=str(ROOT / "assets" / "ghlink-icon.ico"),
+)
+
 # 托盘专用 exe：windowed 无控制台窗口（李工 12:52 需求：托盘常驻不弹命令行）
 exe_tray = EXE(
     pyz_tray,
