@@ -51,5 +51,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,             # v0.2 可加 assets/ghlink.ico
+    icon=str(ROOT / "assets" / "ghlink-icon.ico"),
 )

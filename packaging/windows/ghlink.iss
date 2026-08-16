@@ -25,6 +25,7 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+SetupIconFile=..\..\assets\ghlink-icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

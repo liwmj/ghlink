@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
       - name: Build exe
         run: |
-          pip install pyinstaller
+          pip install pyinstaller pystray Pillow
           pyinstaller packaging/windows/ghlink.spec --distpath dist/windows --workpath build/windows
       - name: Build Inno installer (installer.exe)
         shell: pwsh
