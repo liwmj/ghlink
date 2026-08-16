@@ -119,15 +119,44 @@ ghlink 的语义模型（2026-08-16 李工定调）：
 - Python 3.8+（纯标准库，无第三方依赖）
 - 写 hosts 需要管理员/root 权限
 
-### 安装
+### 安装（各系统）
+
+**macOS（Homebrew tap，推荐）**
 
 ```bash
-# 方式一：从 Release 下载源码包（最新版）
-curl -L https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.1.tar.gz -o ghlink.tar.gz
-tar xzf ghlink.tar.gz && cd ghlink-*
+brew tap liwmj/ghlink
+brew install ghlink
+```
 
-# 方式二：直接 clone（推荐，获取最新代码）
+**Windows（安装向导 / 裸 exe）**
+
+```bash
+# 方式一：安装向导（推荐，含托盘依赖与开机自启选项）
+# 从 https://github.com/liwmj/ghlink/releases 下载 ghlink-installer-vX.Y.Z.exe 双击安装
+
+# 方式二：裸 exe（绿色版，无需安装）
+# 下载 ghlink.exe（CLI）+ ghlink-tray.exe（托盘）放同一目录直接运行
+```
+
+**Linux（apt / .deb）**
+
+```bash
+# 方式一：apt 仓库（Debian/Ubuntu）
+echo "deb [trusted=yes] https://github.com/liwmj/ghlink/releases/download/vX.Y.Z/ ./" | sudo tee /etc/apt/sources.list.d/ghlink.list
+sudo apt update && sudo apt install ghlink
+
+# 方式二：.deb 直接安装
+wget https://github.com/liwmj/ghlink/releases/download/vX.Y.Z/ghlink_X.Y.Z-1_all.deb
+sudo dpkg -i ghlink_*.deb
+```
+
+**源码（任意系统，零第三方依赖）**
+
+```bash
 git clone https://github.com/liwmj/ghlink.git && cd ghlink
+cp config.example.json config.json
+# 运行：python3 -m ghlink.main run [config.json]
+# 托盘：pip install pystray Pillow 后 python3 -m ghlink.main tray
 ```
 
 ### 配置
