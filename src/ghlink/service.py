@@ -85,7 +85,7 @@ def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
     st = state.load(_config_path() if os.path.exists(_config_path()) else "ghlink_status.json")
     watching = _is_enabled()
-    cur_ip = st.get("current_ip") or _hosts_github_ip()
+    cur_ip = st.get("current_ip") or _hosts_github_ip() or _dns_github_ip()
     print("=== ghlink status ===")
     print(f"状态: {st.get('state', 'normal')}")
     print(f"当前IP: {cur_ip or '-'}")
@@ -106,6 +106,17 @@ def status() -> int:
                 f"({h.get('trigger', '')})"
             )
     return 0
+
+
+def _dns_github_ip() -> str:
+    """系统 DNS 解析 github.com 的 IP（hosts 无条目时兜底，v0.2.9 补全链路）。"""
+    try:
+        import socket
+
+        infos = socket.getaddrinfo("github.com", None, socket.AF_INET)
+        return infos[0][4][0]
+    except Exception:
+        return ""
 
 
 def _hosts_github_ip() -> str:

@@ -276,7 +276,7 @@ def _hosts_ip() -> str:
 
 
 def _current_ip() -> str:
-    """当前生效 IP：state.current_ip 优先，history 兜底，再兜底 hosts 实际解析（赛博设计口径）。"""
+    """当前生效 IP：current_ip → history → hosts → 系统 DNS（v0.2.9 兜底链补全）。"""
     st = _load_state()
     ip = st.get("current_ip")
     if not ip and st.get("history"):
@@ -284,6 +284,14 @@ def _current_ip() -> str:
         ip = last.get("ip") if isinstance(last, dict) else last
     if not ip:
         ip = _hosts_ip()
+    if not ip:
+        try:
+            import socket as _socket
+
+            infos = _socket.getaddrinfo("github.com", None, _socket.AF_INET)
+            ip = infos[0][4][0]
+        except Exception:
+            pass
     return ip or "—"
 
 
