@@ -113,6 +113,7 @@ if [ "$s" = "degraded" ]; then
 elif grep -q "ghlink Start" "$HOSTS" && ! grep -q "127.0.0.1 github.com" "$HOSTS"; then
   ip=$(grep "github.com" "$HOSTS" | grep -v "^#" | head -1 | awk '{print $1}')
   ok "② 切换成功写入新 IP: $ip (state=$s)"
+  echo "     hosts 实况: $(grep -E '^[0-9].*(github.com|api.github.com)' "$HOSTS" | tr '\n' ';')"
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://github.com/ 2>/dev/null)
   [ "$code" = "200" ] && ok "② 切换后 github.com HTTP $code" || bad "② 切换后 HTTP=$code"
 else
@@ -176,6 +177,8 @@ restore_hosts
 bkh=$(sha256sum "$BK" | cut -d' ' -f1)
 cur=$(sha256sum "$HOSTS" | cut -d' ' -f1)
 [ "$bkh" = "$cur" ] && ok "收尾 hosts 恢复基线无痕" || bad "收尾 hosts 与基线不一致"
+ghlink_left=$(grep -c "ghlink Start" "$HOSTS" 2>/dev/null || echo 0)
+echo "     恢复后 hosts 残留 ghlink 段落数: $ghlink_left（应为 0）"
 echo ""
 echo "===== Linux 冒烟结果：PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ] && echo "ALL GREEN ✅" || echo "HAS FAILURES ❌"
