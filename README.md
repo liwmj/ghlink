@@ -1,9 +1,8 @@
-<table>
-<tr>
-<td width="64" valign="middle"><img src="assets/ghlink-icon-128.png" alt="ghlink logo" width="64" height="64"></td>
-<td valign="middle"><h1>ghlink — GitHub 链路自愈工具</h1></td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/ghlink-icon-128.png" alt="ghlink logo" width="72">
+</p>
+
+# ghlink — GitHub 链路自愈工具
 
 > 当 GitHub 网络不稳定时，自动获取可用 IP 并替换 hosts，实现无感自愈。
 
