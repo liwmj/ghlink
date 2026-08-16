@@ -29,7 +29,7 @@ class Ghlink < Formula
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}:#{libexec}/vendor"
-      exec "#{py}" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
+      exec "#{py}" -m ghlink.main "$@"
     EOS
     chmod 0755, bin/"ghlink"
 
