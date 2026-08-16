@@ -47,7 +47,7 @@ Name: "{autodesktop}\ghlink"; Filename: "{app}\{#MyAppExeName}"; Parameters: "tr
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
 ; 李工 15:29 定规：默认不自启（不勾选），用户通过托盘右键开关或 ghlink enable 开启
-Name: "autostart"; Description: "开机自动启用值守（ghlink enable，需勾选才自启）"; GroupDescription: "附加任务:"
+Name: "autostart"; Description: "开机自动启用值守（ghlink enable，需勾选才自启）"; GroupDescription: "附加任务:"; Flags: unchecked
 
 [Registry]
 ; 注册 ghlink 到 PATH（用户级）
