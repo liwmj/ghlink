@@ -114,7 +114,7 @@ def _dns_github_ip() -> str:
         import socket
 
         infos = socket.getaddrinfo("github.com", None, socket.AF_INET)
-        return infos[0][4][0]
+        return str(infos[0][4][0])
     except Exception:
         return ""
 

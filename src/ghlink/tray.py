@@ -14,17 +14,25 @@ import threading
 import time
 from typing import Any, Dict
 
+# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+from typing import Any as _Any
+
 from . import service, state
 
-# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+HAS_TRAY = False
 try:
-    import pystray
-    from PIL import Image, ImageDraw
+    import pystray as _pystray
+    from PIL import Image as _PILImage
+    from PIL import ImageDraw as _ImageDraw
 
+    pystray: _Any = _pystray
+    Image: _Any = _PILImage
+    ImageDraw: _Any = _ImageDraw
     HAS_TRAY = True
 except Exception:  # pragma: no cover - 未装依赖时
     pystray = None
     Image = None
+    ImageDraw = None
     HAS_TRAY = False
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
@@ -102,7 +110,7 @@ def _make_icon(color: str, size: int = 64):
         try:
             icon = Image.open(path).convert("RGBA")
             # contain 居中：保持比例不变形（横版图标贴入方形画布）
-            icon.thumbnail((size, size), Image.LANCZOS)
+            icon.thumbnail((size, size), Image.Resampling.LANCZOS)
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             img.paste(
                 icon,
@@ -292,7 +300,7 @@ def _current_ip() -> str:
             ip = infos[0][4][0]
         except Exception:
             pass
-    return ip or "—"
+    return str(ip) if ip else "—"
 
 
 def _copy_ip(icon: Any, item: Any) -> None:
