@@ -182,12 +182,13 @@ def _enable_autostart() -> bool:
                 winreg.SetValueEx(key, "ghlink-tray", 0, winreg.REG_SZ, f'"{exe}"')
             return True
         elif sys.platform == "darwin":
+            import shutil
+
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
-            exe = os.path.join(os.path.dirname(sys.executable), "ghlink-tray")
-            if not os.path.exists(exe):
-                exe = sys.executable
+            # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
+            exe = shutil.which("ghlink") or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
                 f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
