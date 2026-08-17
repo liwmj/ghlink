@@ -39,6 +39,26 @@ def _service_name() -> str:
     return "ghlink"
 
 
+def _state_path() -> str:
+    """状态文件路径：优先从 config.json 的 state_file 字段读取，否则默认 ghlink_status.json。
+
+    与 tray.py 同模式（赛博 08:51 复核指出：config.json 本身无 timestamp 字段，
+    直接读 config 会把配置当状态文件，导致心跳恒判不新鲜）。
+    """
+    cfg_path = _config_path()
+    st_path = "ghlink_status.json"
+    if os.path.exists(cfg_path):
+        try:
+            import json as _json
+
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            st_path = cfg.get("state_file", "ghlink_status.json")
+        except Exception:
+            pass
+    return st_path
+
+
 def enable() -> int:
     """注册定时任务。返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
@@ -83,8 +103,7 @@ def disable() -> int:
 
 def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
-    st = state.load(_config_path() if os.path.exists(_config_path()) else "ghlink_status.json")
-    watching = _is_enabled()
+    st = state.load(_state_path())
     cur_ip = st.get("current_ip") or _hosts_github_ip() or _dns_github_ip()
     print("=== ghlink status ===")
     print(f"状态: {st.get('state', 'normal')}")
@@ -96,7 +115,9 @@ def status() -> int:
         "上次切换: "
         + (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(switched)) if switched else "-")
     )
-    print(f"值守: {'已启用' if watching else '未启用（运行 ghlink enable 开启）'}")
+    # 值守判断（双确认，2026-08-17 赛博复核口径）：
+    # macOS/Windows 主判据=托盘进程存活；Linux 主判据=平台任务注册；次判据=心跳新鲜
+    print(f"值守: {_watch_status_text()}")
     history = st.get("history") or []
     if history:
         print("最近记录:")
@@ -106,6 +127,28 @@ def status() -> int:
                 f"({h.get('trigger', '')})"
             )
     return 0
+
+
+def _watch_status_text() -> str:
+    """值守状态细分文本（2026-08-17 李工新口径：值守独立于托盘）。
+
+    主判据=平台任务注册；次判据=心跳新鲜。
+    注册+心跳新=已启用；注册但心跳停=僵尸（异常）；未注册=未启用。
+    托盘进程降为展示层，附「托盘: 运行中/未运行」辅助行。
+    """
+    try:
+        registered = _is_registered()
+        hb = _heartbeat_fresh()
+        tray = _tray_alive()
+        if registered and hb:
+            base = "已启用（值守注册 + 心跳正常）"
+        elif registered and not hb:
+            base = "异常（值守已注册但心跳已停，疑似僵尸）"
+        else:
+            base = "未启用（运行 ghlink enable 开启值守）"
+        return f"{base}｜托盘: {'运行中' if tray else '未运行'}"
+    except Exception:
+        return "未知"
 
 
 def _dns_github_ip() -> str:
@@ -187,6 +230,10 @@ def _enable_autostart() -> bool:
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
+            # ③ 单实例（李工 09:49 反馈）：托盘已在跑则不重复拉起 LaunchAgent
+            if _tray_alive():
+                print("[ghlink] 托盘已在运行，自启动注册跳过拉起（避免多实例）")
+                return True
             # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
             exe = shutil.which("ghlink") or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
@@ -244,8 +291,8 @@ def _disable_autostart() -> bool:
         return False
 
 
-def _is_enabled() -> bool:
-    """检测定时任务是否已注册。"""
+def _is_registered() -> bool:
+    """平台定时任务是否已注册（enable/disable 幂等判断用，旧口径）。"""
     try:
         if sys.platform == "win32":
             r = platform_adapter._run_cmd(["schtasks", "/Query", "/TN", _service_name()])
@@ -258,6 +305,55 @@ def _is_enabled() -> bool:
                 return True
             out = platform_adapter._run_cmd_output(["crontab", "-l"])
             return "ghlink.main" in (out or "")
+    except Exception:
+        return False
+
+
+def _tray_alive() -> bool:
+    """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。"""
+    try:
+        if sys.platform == "win32":
+            out = platform_adapter._run_cmd_output(
+                ["tasklist", "/FI", "IMAGENAME eq ghlink-tray.exe"]
+            )
+            return "ghlink-tray.exe" in (out or "")
+        elif sys.platform == "darwin":
+            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
+            return bool(out and out.strip())
+        return False
+    except Exception:
+        return False
+
+
+def _heartbeat_fresh(max_age_sec: int = 180) -> bool:
+    """状态文件心跳是否新鲜（探测 1 分钟粒度，默认 3 分钟宽限）。
+
+    状态文件由 run() 每轮探测后 save 更新 timestamp；心跳停 = 探测循环没在跑。
+    """
+    try:
+        st = state.load(_state_path())
+        ts = st.get("timestamp") or ""
+        if not ts:
+            return False
+        t = time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+        age = time.time() - time.mktime(t)
+        return 0 <= age <= max_age_sec
+    except Exception:
+        return False
+
+
+def _is_enabled() -> bool:
+    """值守是否真正在跑（2026-08-17 李工新口径：值守独立于托盘）。
+
+    - 主判据：平台任务注册（enable 即值守，全平台统一）
+    - 次判据：状态文件心跳新鲜（≤3 分钟）
+    - 注册但心跳停 = 僵尸（异常，不算启用）
+    - 托盘进程降为展示层（托盘在但未注册=提示启动值守）
+    """
+    try:
+        if not _is_registered():
+            return False
+        return _heartbeat_fresh()
     except Exception:
         return False
 
@@ -366,6 +462,8 @@ def _disable_macos() -> int:
     p = "/Library/LaunchDaemons/com.ghlink.plist"
     if os.path.exists(p):
         platform_adapter._run_cmd(["launchctl", "unload", p])
+        # 2026-08-17 赛博提醒：unload 可能残留已加载实例，remove 按 Label 彻底清
+        platform_adapter._run_cmd(["launchctl", "remove", "com.ghlink.daemon"])
         os.unlink(p)
     print("[ghlink] 已停用值守（LaunchDaemon 移除）")
     return 0

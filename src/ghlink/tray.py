@@ -221,7 +221,9 @@ def _quit_tray(icon: Any, item: Any) -> None:
                 time.sleep(2)
             except Exception:
                 pass
-        if service._is_enabled():
+        # 2026-08-17 口径对齐：退出=停值守，查平台任务注册（残留清理语义）
+        # 不能用新 _is_enabled()（托盘进程+心跳双确认）——僵尸场景会漏清
+        if service._is_registered():
             _run_privileged("disable")
     except Exception:
         pass
@@ -362,6 +364,18 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    # ③ 单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程则提示退出
+    # macOS pgrep / Windows tasklist；排除自身进程（pgrep -f 可能匹配到当前命令行）
+    try:
+        if service._tray_alive():
+            print(
+                "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
+                file=sys.stderr,
+            )
+            return 0
+    except Exception:
+        pass
 
     st = _load_state()
     s = st.get("state", "normal")

@@ -23,6 +23,22 @@ def test_tray_linux_pure_cli(monkeypatch):
     assert tray.main() == 0
 
 
+def test_tray_single_instance_guard(monkeypatch):
+    """单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程 → 返回 0 不重复拉起。"""
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.service, "_tray_alive", lambda: True)
+    assert tray.main() == 0
+
+
+def test_tray_single_instance_guard_windows(monkeypatch):
+    """Windows 单实例锁同样生效。"""
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
+    monkeypatch.setattr(tray.sys, "platform", "win32")
+    monkeypatch.setattr(tray.service, "_tray_alive", lambda: True)
+    assert tray.main() == 0
+
+
 def test_status_text(tmp_path, monkeypatch):
     """状态文本拼接：状态 + 值守。"""
     st_file = tmp_path / "state.json"
