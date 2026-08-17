@@ -434,15 +434,12 @@ def _detach_if_terminal() -> bool:
 
 
 def _ensure_enabled_sync() -> bool:
-    """① 同步确保值守已启用（v0.2.17，赛博定案：UAC 提权前置）。
+    """① 同步确保值守已启用（v0.2.18 修正：失败不阻断托盘启动）。
 
-    原 _auto_enable 在 daemon 线程（detach 后 3s）里走 ShellExecuteW runas——
-    后台 detach 子进程无窗口上下文，UAC 弹窗大概率无法正常弹出 →
-    enable 静默失败 → 未注册 → 托盘误显示「未启用/值守未运行」。
-
-    修复：enable 提权移到 detach 之前、icon.run() 之前同步执行——
-    Windows 上 UAC 在启动器/终端上下文正常弹出；成功才进主循环，
-    失败明确提示「需要管理员授权」，不再后台静默。
+    李工 23:21 批评：v0.2.17 按 A 语义（提权失败 → return 2 托盘直接退出）
+    → Windows UAC 取消/弹窗异常时托盘完全起不来。修正为 B 语义：
+    enable 提权仍前置同步执行（detach 前、icon.run 前），但失败时
+    **托盘照常启动、状态如实显示未启用**——用户可能只想开托盘看状态。
     """
     try:
         if service._is_enabled():
@@ -468,17 +465,12 @@ def main() -> int:
         )
         return 0
 
-    # ① v0.2.17（赛博定案）：enable 提权前置——detach 之前同步执行，
-    # 避免后台 detach 子进程无窗口上下文 UAC 弹窗失效 → 值守静默未启用
+    # ① v0.2.18（李工 23:21 批评修正）：enable 提权前置同步执行，
+    # 但失败**不阻断托盘启动**（B 语义）——UAC 取消时托盘照常启动、
+    # 状态显示未启用；避免「值守没开 → 托盘也起不来」的体验倒退
     if sys.platform == "win32":
         try:
-            if not _ensure_enabled_sync():
-                print(
-                    "[ghlink] 需要管理员授权以启用值守（UAC 未确认或提权失败）。"
-                    "请重新启动托盘并允许 UAC，或手动运行 ghlink enable。",
-                    file=sys.stderr,
-                )
-                return 2
+            _ensure_enabled_sync()
         except Exception:
             pass
 
