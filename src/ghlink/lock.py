@@ -63,7 +63,9 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
 
             # 2026-08-17 Bug B 修复：绝对路径（/var/lib/ghlink/）目录可能不存在，先建
             os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+            # SonarCloud S5443：O_NOFOLLOW 防符号链接攻击（公共可写目录安全使用）
+            flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(lock_path, flags, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 os.ftruncate(fd, 0)
@@ -86,7 +88,9 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
             pass  # 平台不支持 → 回退 PID 文件方案
         else:
             try:
-                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+                # SonarCloud S5443：O_NOFOLLOW 防符号链接攻击（公共可写目录安全使用）
+                flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(lock_path, flags, 0o644)
             except OSError:
                 yield False  # 锁文件不可打开，视为被占用，跳过本轮
                 return
