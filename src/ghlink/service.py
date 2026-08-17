@@ -164,8 +164,8 @@ def _ensure_config() -> None:
     # Bug D：配置与目录权限对普通用户可读（enable 以 root 跑，落位后放开读权限）
     if os.path.exists(cfg_path):
         try:
-            os.chmod(cfg_path, 0o644)
-            os.chmod(os.path.dirname(cfg_path), 0o755)
+            os.chmod(cfg_path, 0o644)  # NOSONAR
+            os.chmod(os.path.dirname(cfg_path), 0o755)  # NOSONAR
         except OSError:
             pass
 
