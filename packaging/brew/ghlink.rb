@@ -21,6 +21,10 @@ class Ghlink < Formula
     (libexec/"ghlink").install Dir["src/ghlink/*.py"]
     libexec.install "config.example.json"
 
+    # v0.2.17（李工 21:47 定）：托盘图标必须用 LOGO——补装 assets 图标
+    # 到 libexec/assets/（_icon_path 已加 brew 路径候选），避免纯色回退
+    (libexec/"assets").install "assets/ghlink-icon.png"
+
     # 托盘依赖（pystray + Pillow）仅注入安装包：pip 装到 libexec/vendor，核心源码保持零依赖
     py = Formula["python@3.12"].opt_bin/"python3.12"
     system py, "-m", "pip", "install", "--target", libexec/"vendor", "--quiet", "pystray", "Pillow"

@@ -17,6 +17,7 @@ import sys
 import time
 
 from . import platform_adapter, state
+from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
 
 
 def _python_cmd() -> str:
@@ -432,10 +433,33 @@ def _tray_single_instance() -> bool:
 _TRAY_MUTEX_HANDLE = None
 
 
-def _tray_alive(exclude_pid: int = 0) -> bool:
-    """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。
+def _tray_pid_file() -> str:
+    """托盘 PID 文件路径（v0.2.17 ⑤，赛博定案：PID 文件兜底）。
 
-    exclude_pid：排除指定 PID（单实例锁用，防止 pgrep 匹配到正在启动的自身进程）。
+    macOS 上 pgrep 正则会因 detach 后命令行形态（-m ghlink.main tray）
+    匹配不一致导致误判「托盘未运行」——改用 PID 文件：托盘启动时写
+    自己的 PID，_tray_alive() 优先读 PID 文件 + 进程存活检查，pgrep 降为兜底。
+    普通用户进程 → 放用户主目录（/var/lib/ghlink 属 root 不可写）。
+    """
+    return os.path.join(os.path.expanduser("~"), ".ghlink", "ghlink-tray.pid")
+
+
+def _write_tray_pid() -> None:
+    """托盘启动时写入自身 PID（⑤ 配套）。"""
+    try:
+        pid_file = _tray_pid_file()
+        os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+        with open(pid_file, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+
+def _tray_alive(exclude_pid: int = 0) -> bool:
+    """托盘进程是否存活（展示层用）。
+
+    macOS 优先 PID 文件（v0.2.17 ⑤，detach 后 pgrep 正则不可靠），
+    pgrep 兜底；Windows tasklist；Linux 无托盘。
     """
     try:
         if sys.platform == "win32":
@@ -458,6 +482,17 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                 return False
             return True
         elif sys.platform == "darwin":
+            # v0.2.17 ⑤：PID 文件优先（detach 后 pgrep -f 正则与命令行形态不一致）
+            pid_file = _tray_pid_file()
+            try:
+                if os.path.exists(pid_file):
+                    with open(pid_file, encoding="utf-8") as f:
+                        pid = int(f.read().strip())
+                    if pid > 0 and pid != exclude_pid and _pid_alive(pid):
+                        return True
+            except (OSError, ValueError):
+                pass
+            # 兜底：pgrep（PID 文件缺失/损坏时）
             out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
             pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
             if exclude_pid:
