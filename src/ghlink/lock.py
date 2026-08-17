@@ -40,8 +40,6 @@ def _safe_lock_path(lock_path: str) -> str:
     allowed_roots = (
         "/var/lib/ghlink",
         tempfile.gettempdir(),
-        "/tmp",
-        "/var/tmp",
         os.path.expanduser("~"),
     )
     for root in allowed_roots:
