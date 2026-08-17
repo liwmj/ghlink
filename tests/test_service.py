@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import time
 
 import pytest
@@ -190,19 +191,23 @@ class TestResolveRel:
         )
 
     def test_relative_resolved_to_config_dir(self):
-        assert (
-            main._resolve_rel("ghlink_status.json", "/etc/ghlink/config.json")
-            == "/etc/ghlink/ghlink_status.json"
-        )
+        # 期望值动态构造（Windows 路径分隔符不同，CI 跨平台）
+        cfg_abs = os.path.abspath("/etc/ghlink/config.json")
+        expected = os.path.join(os.path.dirname(cfg_abs), "ghlink_status.json")
+        assert main._resolve_rel("ghlink_status.json", "/etc/ghlink/config.json") == expected
 
     def test_empty_unchanged(self):
         assert main._resolve_rel("", "/etc/ghlink/config.json") == ""
 
     def test_lock_and_backup_relative(self):
-        assert (
-            main._resolve_rel("ghlink.lock", "/etc/ghlink/config.json") == "/etc/ghlink/ghlink.lock"
+        cfg_abs = os.path.abspath("/etc/ghlink/config.json")
+        base = os.path.dirname(cfg_abs)
+        assert main._resolve_rel("ghlink.lock", "/etc/ghlink/config.json") == os.path.join(
+            base, "ghlink.lock"
         )
-        assert main._resolve_rel("backup", "/etc/ghlink/config.json") == "/etc/ghlink/backup"
+        assert main._resolve_rel("backup", "/etc/ghlink/config.json") == os.path.join(
+            base, "backup"
+        )
 
 
 class TestHeartbeatFresh:
