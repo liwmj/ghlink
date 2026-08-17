@@ -56,7 +56,7 @@
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
 - 🔔 **多渠道告警**：切换、降级、回滚事件实时通知（飞书 / 钉钉 / 企业微信 / Telegram / 通用 Webhook 可配），冷却期去重，发送失败不阻断主流程
 - 💻 **跨平台**：macOS / Windows / Linux 一套代码，平台差异收敛到单一适配层
-- 📦 **零第三方依赖**：纯 Python 标准库实现，`pip install` 都不需要
+- 📦 **零第三方依赖**：纯 Python 标准库实现，运行无需任何第三方包
 
 ---
 
@@ -150,6 +150,13 @@ sudo apt update && sudo apt install ghlink
 # 方式二：.deb 直接安装
 wget https://github.com/liwmj/ghlink/releases/download/v0.2.18/ghlink_0.2.18-1_all.deb
 sudo dpkg -i ghlink_*.deb
+```
+
+**PyPI（任意系统，发布打通后生效）**
+
+```bash
+# PyPI 发布打通后可直接安装（当前版本请优先使用上方各平台安装包）
+pip install ghlink
 ```
 
 **源码（任意系统，零第三方依赖）**
