@@ -39,6 +39,26 @@ def _service_name() -> str:
     return "ghlink"
 
 
+def _state_path() -> str:
+    """状态文件路径：优先从 config.json 的 state_file 字段读取，否则默认 ghlink_status.json。
+
+    与 tray.py 同模式（赛博 08:51 复核指出：config.json 本身无 timestamp 字段，
+    直接读 config 会把配置当状态文件，导致心跳恒判不新鲜）。
+    """
+    cfg_path = _config_path()
+    st_path = "ghlink_status.json"
+    if os.path.exists(cfg_path):
+        try:
+            import json as _json
+
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            st_path = cfg.get("state_file", "ghlink_status.json")
+        except Exception:
+            pass
+    return st_path
+
+
 def enable() -> int:
     """注册定时任务。返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
@@ -83,7 +103,7 @@ def disable() -> int:
 
 def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
-    st = state.load(_config_path() if os.path.exists(_config_path()) else "ghlink_status.json")
+    st = state.load(_state_path())
     cur_ip = st.get("current_ip") or _hosts_github_ip() or _dns_github_ip()
     print("=== ghlink status ===")
     print(f"状态: {st.get('state', 'normal')}")
@@ -306,8 +326,7 @@ def _heartbeat_fresh(max_age_sec: int = 180) -> bool:
     状态文件由 run() 每轮探测后 save 更新 timestamp；心跳停 = 探测循环没在跑。
     """
     try:
-        st_path = _config_path() if os.path.exists(_config_path()) else "ghlink_status.json"
-        st = state.load(st_path)
+        st = state.load(_state_path())
         ts = st.get("timestamp") or ""
         if not ts:
             return False

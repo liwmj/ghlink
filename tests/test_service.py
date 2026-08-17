@@ -6,6 +6,8 @@
 import json
 import time
 
+import pytest
+
 from ghlink import service
 
 
@@ -114,6 +116,42 @@ class TestHeartbeatFresh:
         monkeypatch.setattr(service.os.path, "exists", lambda p: p == st_path)
         monkeypatch.setattr(service.state, "load", lambda p: {"timestamp": ""})
         assert service._heartbeat_fresh() is False
+
+    def test_integration_real_files(self, tmp_path):
+        """集成：真实 config.json（state_file 字段）+ 真实状态文件 → 读状态文件心跳。
+
+        赛博 08:51 复核 bug：旧实现直接读 _config_path()（配置文件无 timestamp），
+        config.json 存在时恒判不新鲜 → 假阴性。此测试不 monkeypatch state.load，
+        走真实文件链路验证修复。
+        """
+        # config.json 带 state_file 指向状态文件
+        cfg = tmp_path / "config.json"
+        cfg.write_text(
+            json.dumps({"state_file": str(tmp_path / "state.json")}), encoding="utf-8"
+        )
+        # 真实状态文件，timestamp 新鲜
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        (tmp_path / "state.json").write_text(
+            json.dumps({"timestamp": ts}), encoding="utf-8"
+        )
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(service, "_config_path", lambda: str(cfg))
+        try:
+            assert service._heartbeat_fresh() is True
+        finally:
+            monkeypatch.undo()
+
+    def test_integration_config_without_state_file(self, tmp_path, monkeypatch):
+        """集成：config.json 存在但无 state_file 字段 → 回退默认 ghlink_status.json（cwd）。"""
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"probe": {"targets": ["github.com"]}}), encoding="utf-8")
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        (tmp_path / "ghlink_status.json").write_text(
+            json.dumps({"timestamp": ts}), encoding="utf-8"
+        )
+        monkeypatch.setattr(service, "_config_path", lambda: str(cfg))
+        monkeypatch.chdir(tmp_path)
+        assert service._heartbeat_fresh() is True
 
 
 class TestIsEnabled:
