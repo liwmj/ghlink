@@ -80,7 +80,9 @@ def test_status_text(tmp_path, monkeypatch):
     )
     text = tray._status_text()
     assert "降级" in text
-    assert "已启用（值守注册 + 心跳正常）" in text  # 新判据（平台注册+心跳），不再是旧的“值守未启用”
+    assert (
+        "已启用（值守注册 + 心跳正常）" in text
+    )  # 新判据（平台注册+心跳），不再是旧的“值守未启用”
 
 
 def test_status_text_unregistered(tmp_path, monkeypatch):
@@ -89,7 +91,9 @@ def test_status_text_unregistered(tmp_path, monkeypatch):
     st_file.write_text(json.dumps({"state": "normal"}), encoding="utf-8")
     monkeypatch.setattr(tray, "_state_path", lambda: str(st_file))
     monkeypatch.setattr(
-        tray.service, "_watch_status_text", lambda: "未启用（运行 ghlink enable 开启值守）｜托盘: 运行中"
+        tray.service,
+        "_watch_status_text",
+        lambda: "未启用（运行 ghlink enable 开启值守）｜托盘: 运行中",
     )
     text = tray._status_text()
     assert "正常" in text
@@ -107,7 +111,6 @@ def test_hide_dock_icon_darwin_fallback(monkeypatch):
     monkeypatch.setattr(tray.sys, "platform", "darwin")
     monkeypatch.setattr("ctypes.util.find_library", lambda name: None)
     tray._hide_dock_icon()  # 不应抛异常
-
 
 
 def test_color_map():
