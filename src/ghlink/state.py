@@ -38,7 +38,12 @@ def load(path: str) -> Dict[str, Any]:
 
 
 def save(path: str, state: Dict[str, Any]) -> None:
-    """原子写：先写临时文件再 rename，避免半截文件。"""
+    """原子写：先写临时文件再 rename，避免半截文件。
+
+    2026-08-17 v0.2.12 复测发现：值守进程以 root 写入 /var/lib/ghlink/ 后
+    状态文件为 600，普通用户 ghlink status 读不到 → 心跳恒判不新鲜。
+    写完后 chmod 644，保证 CLI 可读。
+    """
     state["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     fd, tmp = tempfile.mkstemp(
@@ -49,6 +54,7 @@ def save(path: str, state: Dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
+        os.chmod(tmp, 0o644)  # root 值守进程写入后 CLI 仍可读
         os.replace(tmp, path)
     except OSError:
         try:
