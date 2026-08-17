@@ -221,7 +221,9 @@ def _quit_tray(icon: Any, item: Any) -> None:
                 time.sleep(2)
             except Exception:
                 pass
-        if service._is_enabled():
+        # 2026-08-17 口径对齐：退出=停值守，查平台任务注册（残留清理语义）
+        # 不能用新 _is_enabled()（托盘进程+心跳双确认）——僵尸场景会漏清
+        if service._is_registered():
             _run_privileged("disable")
     except Exception:
         pass

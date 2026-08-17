@@ -84,7 +84,6 @@ def disable() -> int:
 def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
     st = state.load(_config_path() if os.path.exists(_config_path()) else "ghlink_status.json")
-    watching = _is_enabled()
     cur_ip = st.get("current_ip") or _hosts_github_ip() or _dns_github_ip()
     print("=== ghlink status ===")
     print(f"状态: {st.get('state', 'normal')}")
@@ -96,7 +95,9 @@ def status() -> int:
         "上次切换: "
         + (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(switched)) if switched else "-")
     )
-    print(f"值守: {'已启用' if watching else '未启用（运行 ghlink enable 开启）'}")
+    # 值守判断（双确认，2026-08-17 赛博复核口径）：
+    # macOS/Windows 主判据=托盘进程存活；Linux 主判据=平台任务注册；次判据=心跳新鲜
+    print(f"值守: {_watch_status_text()}")
     history = st.get("history") or []
     if history:
         print("最近记录:")
@@ -106,6 +107,27 @@ def status() -> int:
                 f"({h.get('trigger', '')})"
             )
     return 0
+
+
+def _watch_status_text() -> str:
+    """值守状态细分文本（双确认口径，2026-08-17 赛博复核）。
+
+    macOS/Windows 载体=托盘进程；Linux 载体=平台任务注册；次判据=心跳新鲜。
+    载体在+心跳新=已启用；载体在但心跳停=僵尸（异常）；载体不在=未启用。
+    """
+    try:
+        if sys.platform in ("win32", "darwin"):
+            carrier = _tray_alive()
+        else:
+            carrier = _is_registered()
+        hb = _heartbeat_fresh()
+        if carrier and hb:
+            return "已启用（载体在 + 心跳正常）"
+        if carrier and not hb:
+            return "异常（载体在但心跳已停，疑似僵尸进程）"
+        return "未启用（运行 ghlink enable 或启动托盘开启）"
+    except Exception:
+        return "未知"
 
 
 def _dns_github_ip() -> str:
@@ -244,8 +266,8 @@ def _disable_autostart() -> bool:
         return False
 
 
-def _is_enabled() -> bool:
-    """检测定时任务是否已注册。"""
+def _is_registered() -> bool:
+    """平台定时任务是否已注册（enable/disable 幂等判断用，旧口径）。"""
     try:
         if sys.platform == "win32":
             r = platform_adapter._run_cmd(["schtasks", "/Query", "/TN", _service_name()])
@@ -258,6 +280,59 @@ def _is_enabled() -> bool:
                 return True
             out = platform_adapter._run_cmd_output(["crontab", "-l"])
             return "ghlink.main" in (out or "")
+    except Exception:
+        return False
+
+
+def _tray_alive() -> bool:
+    """值守载体（托盘进程）是否存活。macOS/Windows 托盘=总开关；Linux 纯 CLI 无托盘。"""
+    try:
+        if sys.platform == "win32":
+            out = platform_adapter._run_cmd_output(
+                ["tasklist", "/FI", "IMAGENAME eq ghlink-tray.exe"]
+            )
+            return "ghlink-tray.exe" in (out or "")
+        elif sys.platform == "darwin":
+            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
+            return bool(out and out.strip())
+        return False
+    except Exception:
+        return False
+
+
+def _heartbeat_fresh(max_age_sec: int = 180) -> bool:
+    """状态文件心跳是否新鲜（探测 1 分钟粒度，默认 3 分钟宽限）。
+
+    状态文件由 run() 每轮探测后 save 更新 timestamp；心跳停 = 探测循环没在跑。
+    """
+    try:
+        st_path = _config_path() if os.path.exists(_config_path()) else "ghlink_status.json"
+        st = state.load(st_path)
+        ts = st.get("timestamp") or ""
+        if not ts:
+            return False
+        t = time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+        age = time.time() - time.mktime(t)
+        return 0 <= age <= max_age_sec
+    except Exception:
+        return False
+
+
+def _is_enabled() -> bool:
+    """值守是否真正在跑（双确认，2026-08-17 赛博复核口径）。
+
+    - 主判据：值守载体存活（macOS/Windows 托盘进程；Linux 平台任务注册）
+    - 次判据：状态文件心跳新鲜（≤3 分钟）
+    - 载体在但心跳停 = 僵尸（异常，不算启用）
+    """
+    try:
+        if sys.platform in ("win32", "darwin"):
+            if not _tray_alive():
+                return False
+        else:
+            if not _is_registered():
+                return False
+        return _heartbeat_fresh()
     except Exception:
         return False
 
@@ -366,6 +441,8 @@ def _disable_macos() -> int:
     p = "/Library/LaunchDaemons/com.ghlink.plist"
     if os.path.exists(p):
         platform_adapter._run_cmd(["launchctl", "unload", p])
+        # 2026-08-17 赛博提醒：unload 可能残留已加载实例，remove 按 Label 彻底清
+        platform_adapter._run_cmd(["launchctl", "remove", "com.ghlink.daemon"])
         os.unlink(p)
     print("[ghlink] 已停用值守（LaunchDaemon 移除）")
     return 0
