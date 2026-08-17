@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.2.14"
+VERSION="0.2.15"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 
