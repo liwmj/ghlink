@@ -64,14 +64,23 @@ def ensure_privilege() -> bool:
 
 
 def _run_cmd(args, timeout: int = 15) -> bool:
-    """执行命令，成功（returncode==0）返回 True。"""
+    """执行命令，成功（returncode==0）返回 True。
+
+    v0.2.16（李工 18:43 反馈：Windows 一直闪弹命令窗）：
+    Windows 上所有工具发起的子进程加 CREATE_NO_WINDOW，
+    避免 schtasks/tasklist 等 console 程序弹出命令窗。
+    """
     try:
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.run(
             args,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
             check=False,
+            **kwargs,
         )
         return proc.returncode == 0
     except Exception:
@@ -79,8 +88,15 @@ def _run_cmd(args, timeout: int = 15) -> bool:
 
 
 def _run_cmd_output(args, timeout: int = 15) -> str:
-    """执行命令并返回 stdout（失败返回空字符串）。"""
+    """执行命令并返回 stdout（失败返回空字符串）。
+
+    v0.2.16（李工 18:43 反馈：Windows 一直闪弹命令窗）：
+    Windows 上同样加 CREATE_NO_WINDOW，不弹命令窗。
+    """
     try:
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.run(
             args,
             stdout=subprocess.PIPE,
@@ -88,6 +104,7 @@ def _run_cmd_output(args, timeout: int = 15) -> str:
             timeout=timeout,
             check=False,
             text=True,
+            **kwargs,
         )
         return proc.stdout if proc.returncode == 0 else ""
     except Exception:

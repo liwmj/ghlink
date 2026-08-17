@@ -93,13 +93,42 @@ def _load_state() -> Dict[str, Any]:
     return state.load(p) if os.path.exists(p) else {}
 
 
+def _hide_dock_icon() -> None:
+    """macOS：隐藏 Dock 图标（LSUIElement 等效，托盘常驻不占 Dock）。
+
+    2026-08-17 v0.2.16（李工 18:43 反馈）：托盘用 python 进程跑，
+    Dock 一直显示 Python 图标。用 Objective-C runtime 设置
+    NSApplicationActivationPolicyAccessory（=1）隐藏 Dock，零依赖
+    （不引 pyobjc，ctypes 直接调 objc runtime）。
+    """
+    if sys.platform != "darwin":  # pragma: no cover - 仅 macOS
+        return
+    try:  # pragma: no cover - 依赖 macOS 运行时
+        import ctypes
+        import ctypes.util
+
+        objc_lib = ctypes.util.find_library("objc")
+        if not objc_lib:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_lib)
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.objc_msgSend.restype = ctypes.c_void_p
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        cls = objc.objc_getClass(b"NSApplication")
+        sel = objc.sel_registerName(b"sharedApplication")
+        app = objc.objc_msgSend(cls, sel)
+        # setActivationPolicy: 0=Regular(显示Dock) 1=Accessory(隐藏Dock) 2=Prohibited
+        objc.objc_msgSend(app, objc.sel_registerName(b"setActivationPolicy:"), ctypes.c_int(1))
+    except Exception:
+        pass  # 隐藏失败不阻塞托盘（仅 Dock 图标可见性）
+
+
 def _status_text() -> str:
     st = _load_state()
     s = st.get("state", "normal")
-    watching = service._is_enabled()
     txt = _TEXT.get(s, s)
-    watch = "值守已启用" if watching else "值守未启用"
-    return f"状态: {txt} ｜ {watch}"
+    return f"状态: {txt} ｜ {service._watch_status_text()}"
 
 
 def _make_icon(color: str, size: int = 64):
@@ -191,7 +220,10 @@ def _run_privileged(subcmd: str) -> bool:
             return ret > 32
         import subprocess
 
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        kwargs: dict = {}
+        if sys.platform == "win32":  # v0.2.16：提权已具备时不弹命令窗
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **kwargs)
         return r.returncode == 0
     except Exception:
         return False
@@ -379,6 +411,9 @@ def main() -> int:
             return 0
     except Exception:
         pass
+
+    # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
+    _hide_dock_icon()
 
     st = _load_state()
     s = st.get("state", "normal")
