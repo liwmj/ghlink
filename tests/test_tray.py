@@ -58,7 +58,8 @@ def test_tray_no_instance_starts(monkeypatch):
         def stop(self):
             pass
 
-    monkeypatch.setattr(tray.pystray, "Icon", _FakeIcon)
+    # CI 无 pystray 依赖时 tray.pystray 为 None，需整体替换（不能 setattr(None, ...)）
+    monkeypatch.setattr(tray, "pystray", type("FakePystray", (), {"Icon": _FakeIcon})())
     monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
     monkeypatch.setattr(tray, "_status_text", lambda: "")
     monkeypatch.setattr(tray, "_build_menu", lambda: None)
