@@ -14,6 +14,9 @@ from typing import Any, Dict
 from . import config as cfgmod
 from . import hosts_manager, lock, notifier, probe, resolver, service, state
 
+# SonarCloud S1192：默认配置文件名常量（重复字面量 6 处收敛）
+DEFAULT_CONFIG_FILE = "config.json"
+
 
 def _resolve_rel(value: str, config_path: str) -> str:
     """相对路径 → 相对 config.json 所在目录解析；绝对路径原样返回。
@@ -28,15 +31,15 @@ def _resolve_rel(value: str, config_path: str) -> str:
     return os.path.join(base, value)
 
 
-def _state_path(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+def _state_path(cfg: Dict[str, Any], config_path: str = DEFAULT_CONFIG_FILE) -> str:
     return _resolve_rel(cfg.get("state_file", "ghlink_status.json"), config_path)
 
 
-def _lock_path(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+def _lock_path(cfg: Dict[str, Any], config_path: str = DEFAULT_CONFIG_FILE) -> str:
     return _resolve_rel(cfg.get("lock_file", "ghlink.lock"), config_path)
 
 
-def _backup_dir(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+def _backup_dir(cfg: Dict[str, Any], config_path: str = DEFAULT_CONFIG_FILE) -> str:
     return _resolve_rel(cfg.get("hosts_backup_dir", "backup"), config_path)
 
 
@@ -57,7 +60,7 @@ def _update_state(st: Dict[str, Any], **fields: Any) -> None:
         st[k] = v
 
 
-def run(config_path: str = "config.json") -> int:
+def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
     """单轮执行主流程，返回退出码。"""
     cfg = cfgmod.load_config(config_path)
     targets = _targets(cfg)
@@ -256,11 +259,11 @@ def main() -> None:
 
             sys.exit(tray.main())
         # 非打包/其他平台：兼容旧用法，当作 config 路径单轮运行
-        sys.exit(run("config.json"))
+        sys.exit(run(DEFAULT_CONFIG_FILE))
 
     first = args[0]
     if first in ("run",):
-        cfg = args[1] if len(args) > 1 else "config.json"
+        cfg = args[1] if len(args) > 1 else DEFAULT_CONFIG_FILE
         sys.exit(run(cfg))
     if first == "enable":
         sys.exit(service.enable())

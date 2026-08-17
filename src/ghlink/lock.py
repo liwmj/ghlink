@@ -29,13 +29,15 @@ def _pid_alive(pid: int) -> bool:
 @contextmanager
 def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     """获取锁；成功 yield True，已被持有 yield False（调用方直接退出本轮）。"""
+    # SonarCloud S8707：访问前规范化路径（realpath 防符号链接/相对路径逃逸）
+    lock_path = os.path.realpath(lock_path)
     # Linux/macOS 用 flock 内核锁（进程退出自动释放）
     if sys.platform != "win32":
         try:
             import fcntl
 
             # 2026-08-17 Bug B 修复：绝对路径（/var/lib/ghlink/）目录可能不存在，先建
-            os.makedirs(os.path.dirname(os.path.abspath(lock_path)), exist_ok=True)
+            os.makedirs(os.path.dirname(lock_path), exist_ok=True)
             fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
