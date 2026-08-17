@@ -54,7 +54,7 @@ def save(path: str, state: Dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-        os.chmod(tmp, 0o644)  # NOSONAR:S2612
+        os.chmod(tmp, 0o644)  # NOSONAR
         os.replace(tmp, path)
     except OSError:
         try:
