@@ -54,7 +54,27 @@ def parse_hosts(text: str) -> Dict[str, List[str]]:
     return entries
 
 
-def _ip_reachable(ip: str, domain: str, timeout_sec: float = 5) -> bool:
+def _safe_cache_path(state_dir: str = "") -> str:
+    """校验并规范化缓存路径（SonarCloud S8707：防符号链接/路径逃逸）。
+
+    要求：绝对路径 + realpath 解析符号链接 + 位于允许目录
+    （用户主目录或系统临时目录）内。
+    """
+    import tempfile
+
+    path = _cache_path(state_dir)
+    resolved = os.path.realpath(path)
+    if not os.path.isabs(resolved):
+        raise ValueError(f"cache path must be absolute: {path}")
+    allowed_roots = (os.path.expanduser("~"), tempfile.gettempdir())
+    for root in allowed_roots:
+        root = os.path.realpath(root)
+        if resolved == root or resolved.startswith(root + os.sep):
+            return resolved
+    raise ValueError(f"cache path outside allowed dirs: {resolved}")
+
+
+def _ip_reachable(ip: str, timeout_sec: float = 5) -> bool:
     """基础可达性抽检：TCP 443 连通即认为可用（防坏 IP 入场）。"""
     import socket
 
@@ -70,20 +90,20 @@ def filter_reachable(entries: Dict[str, List[str]], max_ips: int = 2) -> Dict[st
     """抽检：每域名保留可达 IP（最多 max_ips 个），全不可达则剔除该域名。"""
     out: Dict[str, List[str]] = {}
     for domain, ips in entries.items():
-        ok_ips = [ip for ip in ips[:5] if _ip_reachable(ip, domain)]
+        ok_ips = [ip for ip in ips[:5] if _ip_reachable(ip)]
         if ok_ips:
             out[domain] = ok_ips[:max_ips]
     return out
 
 
-def load_cached(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]]:
+def load_cached(state_dir: str = "") -> Dict[str, List[str]]:
     """读本地缓存（拉取失败时兜底，防坏 IP 列表已抽检过）。"""
     try:
-        path = _cache_path(state_dir)
+        path = _safe_cache_path(state_dir)
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
-            return {k: v for k, v in data.get("entries", {}).items()}
+            return dict(data.get("entries", {}))
     except (OSError, ValueError):
         pass
     return {}
@@ -92,11 +112,11 @@ def load_cached(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]
 def save_cache(entries: Dict[str, List[str]], state_dir: str = "") -> None:
     """保存抽检后的缓存（供下次拉取失败兜底）。"""
     try:
-        path = _cache_path(state_dir)
+        path = _safe_cache_path(state_dir)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"ts": time.time(), "entries": entries}, f)
-    except OSError:
+    except (OSError, ValueError):
         pass
 
 
@@ -125,5 +145,5 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
     except Exception:
         pass
     # 拉取失败 → 缓存兜底（缓存已抽检过）
-    cached = load_cached(cfg, state_dir)
+    cached = load_cached(state_dir)
     return {d: ips for d, ips in cached.items() if d not in core}

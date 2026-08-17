@@ -38,7 +38,7 @@ def test_cache_roundtrip(tmp_path):
     """缓存写读往返。"""
     entries = {"raw.githubusercontent.com": ["185.199.108.133"]}
     g520.save_cache(entries, str(tmp_path))
-    loaded = g520.load_cached({}, str(tmp_path))
+    loaded = g520.load_cached(str(tmp_path))
     assert loaded == entries
 
 
@@ -55,7 +55,7 @@ def test_sync_core_excluded(monkeypatch, tmp_path):
     def _fake_fetch(url, timeout_sec):
         return text
 
-    def _fake_reachable(ip, domain, timeout_sec=5):
+    def _fake_reachable(ip, timeout_sec=5):
         return True
 
     monkeypatch.setattr(g520, "fetch_hosts", _fake_fetch)
