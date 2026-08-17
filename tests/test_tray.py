@@ -27,26 +27,27 @@ def test_tray_single_instance_guard(monkeypatch):
     """单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程 → 返回 0 不重复拉起。"""
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "darwin")
-    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: True)
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: True)
     assert tray.main() == 0
 
 
 def test_tray_single_instance_guard_windows(monkeypatch):
-    """Windows 单实例锁同样生效。"""
+    """Windows 单实例锁（命名互斥体）同样生效。"""
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "win32")
-    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: True)
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: True)
     assert tray.main() == 0
 
 
 def test_tray_no_instance_starts(monkeypatch):
-    """无已有实例（pgrep 只匹配到自身，排除后无实例）→ 正常继续启动，不被自己挡住。
+    """无已有实例 → 正常继续启动，不被自己挡住。
 
-    赛博 09:56 问题 B：单实例锁必须排除自身 PID，否则首次 ghlink tray 会被自己拦截。
+    李工 14:40 Windows 闪退根因：onefile 双进程同名，tasklist 排除自身仍误判
+    引导进程为已有实例 → 托盘启动即退出。改用命名互斥体后此场景不再误伤。
     """
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "darwin")
-    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: False)
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
 
     class _FakeIcon:
         def __init__(self, *a, **k):

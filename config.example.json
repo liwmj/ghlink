@@ -25,7 +25,7 @@
     "enabled": true,
     "feishu_webhook": ""
   },
-  "state_file": "ghlink_status.json",
-  "lock_file": "ghlink.lock",
-  "hosts_backup_dir": "backup"
+  "state_file": "/var/lib/ghlink/ghlink_status.json",
+  "lock_file": "/var/lib/ghlink/ghlink.lock",
+  "hosts_backup_dir": "/var/lib/ghlink/backup"
 }

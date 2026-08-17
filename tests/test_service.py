@@ -4,11 +4,12 @@
 """
 
 import json
+import os
 import time
 
 import pytest
 
-from ghlink import service
+from ghlink import main, service
 
 
 class TestIsRegistered:
@@ -125,6 +126,88 @@ class TestTrayAlive:
     def test_linux_no_tray(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "linux")
         assert service._tray_alive() is False
+
+
+class TestEntryCmd:
+    """值守执行入口（2026-08-17 Bug A 修复：优先 wrapper 带 PYTHONPATH）。"""
+
+    def test_prefer_wrapper(self, monkeypatch):
+        """PATH 里有 wrapper → 用 wrapper（带 PYTHONPATH），不裸调 python -m。"""
+        monkeypatch.setattr(service.sys, "platform", "darwin")
+        monkeypatch.setattr(service.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(service.shutil, "which", lambda name: "/usr/local/bin/ghlink")
+        cmd = service._python_cmd()
+        assert "/usr/local/bin/ghlink" in cmd
+        assert "-m ghlink.main" not in cmd
+
+    def test_prefer_wrapper_linux(self, monkeypatch):
+        """Linux deb 安装：/usr/bin/ghlink wrapper 优先。"""
+        monkeypatch.setattr(service.sys, "platform", "linux")
+        monkeypatch.setattr(service.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(service.shutil, "which", lambda name: "/usr/bin/ghlink")
+        cmd = service._python_cmd()
+        assert "/usr/bin/ghlink" in cmd
+
+    def test_fallback_dev_mode(self, monkeypatch):
+        """无 wrapper（源码/venv 开发）→ 回退 python -m（PYTHONPATH 天然可用）。"""
+        monkeypatch.setattr(service.sys, "platform", "linux")
+        monkeypatch.setattr(service.os.path, "exists", lambda p: False)
+        monkeypatch.setattr(service.shutil, "which", lambda name: None)
+        cmd = service._python_cmd()
+        assert "-m ghlink.main" in cmd
+
+
+class TestEnsureConfig:
+    """enable 前配置落位（2026-08-17 Bug B 修复）。"""
+
+    def test_existing_config_untouched(self, tmp_path, monkeypatch):
+        """config 已存在 → 不复制不覆盖。"""
+        cfg = tmp_path / "config.json"
+        cfg.write_text('{"keep": true}', encoding="utf-8")
+        monkeypatch.setattr(service, "_config_path", lambda: str(cfg))
+        service._ensure_config()
+        assert "keep" in cfg.read_text(encoding="utf-8")
+
+    def test_missing_config_copies_example(self, tmp_path, monkeypatch):
+        """config 缺失 → 从候选模板复制（真实文件链路，不 mock exists）。"""
+        example = tmp_path / "config.example.json"
+        example.write_text('{"state_file": "/var/lib/ghlink/x.json"}', encoding="utf-8")
+        cfg = tmp_path / "etc" / "ghlink" / "config.json"
+        monkeypatch.setattr(service, "_config_path", lambda: str(cfg))
+        # 候选列表第一个 = cwd/config.example.json，用 tmp_path 做 cwd（真实存在）
+        monkeypatch.chdir(tmp_path)
+        service._ensure_config()
+        assert cfg.exists()
+        assert "var/lib/ghlink" in cfg.read_text(encoding="utf-8")
+
+
+class TestResolveRel:
+    """相对路径 → 相对 config.json 目录解析（2026-08-17 赛博补强，Bug B 根治）。"""
+
+    def test_absolute_unchanged(self):
+        assert (
+            main._resolve_rel("/var/lib/ghlink/x.json", "/etc/ghlink/config.json")
+            == "/var/lib/ghlink/x.json"
+        )
+
+    def test_relative_resolved_to_config_dir(self):
+        # 期望值动态构造（Windows 路径分隔符不同，CI 跨平台）
+        cfg_abs = os.path.abspath("/etc/ghlink/config.json")
+        expected = os.path.join(os.path.dirname(cfg_abs), "ghlink_status.json")
+        assert main._resolve_rel("ghlink_status.json", "/etc/ghlink/config.json") == expected
+
+    def test_empty_unchanged(self):
+        assert main._resolve_rel("", "/etc/ghlink/config.json") == ""
+
+    def test_lock_and_backup_relative(self):
+        cfg_abs = os.path.abspath("/etc/ghlink/config.json")
+        base = os.path.dirname(cfg_abs)
+        assert main._resolve_rel("ghlink.lock", "/etc/ghlink/config.json") == os.path.join(
+            base, "ghlink.lock"
+        )
+        assert main._resolve_rel("backup", "/etc/ghlink/config.json") == os.path.join(
+            base, "backup"
+        )
 
 
 class TestHeartbeatFresh:

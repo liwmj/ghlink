@@ -12,6 +12,7 @@
 """
 
 import os
+import shutil
 import sys
 import time
 
@@ -19,7 +20,24 @@ from . import platform_adapter, state
 
 
 def _python_cmd() -> str:
-    """当前解释器路径 + ghlink 模块入口。"""
+    """值守执行入口：优先 wrapper（带 PYTHONPATH），回退裸 python -m。
+
+    2026-08-17 Bug A 修复（拂晓/顾笙双端实锤）：plist/systemd 裸调
+    sys.executable -m ghlink.main 无 PYTHONPATH → ModuleNotFoundError，
+    值守 enable 了等于没 enable。wrapper（/usr/local/bin/ghlink 或
+    /usr/bin/ghlink）自带 PYTHONPATH，必须优先使用。
+    """
+    # Windows frozen：windowed 入口静默跑（李工 13:34 定）
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        watch = os.path.join(exe_dir, "ghlink-watch.exe")
+        if os.path.exists(watch):
+            return f'"{watch}"'
+    # 优先 PATH 里的 wrapper（brew/deb 安装均落 bin）
+    for cand in (shutil.which("ghlink"), "/usr/local/bin/ghlink", "/usr/bin/ghlink"):
+        if cand and os.path.exists(cand):
+            return f'"{cand}"'
+    # 开发模式回退：裸 python -m（源码/venv 环境 PYTHONPATH 天然可用）
     py = sys.executable or "python3"
     return f'"{py}" -m ghlink.main'
 
@@ -44,6 +62,8 @@ def _state_path() -> str:
 
     与 tray.py 同模式（赛博 08:51 复核指出：config.json 本身无 timestamp 字段，
     直接读 config 会把配置当状态文件，导致心跳恒判不新鲜）。
+    2026-08-17 赛博补强（Bug B 根治）：相对路径→相对 config.json 目录解析，
+    避免 systemd/LaunchDaemon（cwd=/）与 CLI（cwd=用户目录）读写不一致。
     """
     cfg_path = _config_path()
     st_path = "ghlink_status.json"
@@ -56,6 +76,9 @@ def _state_path() -> str:
             st_path = cfg.get("state_file", "ghlink_status.json")
         except Exception:
             pass
+    # 相对路径 → 相对 config.json 所在目录；绝对路径原样返回
+    if st_path and not os.path.isabs(st_path):
+        st_path = os.path.join(os.path.dirname(os.path.abspath(cfg_path)), st_path)
     return st_path
 
 
@@ -68,6 +91,8 @@ def enable() -> int:
             file=sys.stderr,
         )
         return 2
+    # 2026-08-17 Bug B 修复：enable 前确保 config 落位（/etc/ghlink/config.json 不存在则复制）
+    _ensure_config()
     try:
         if sys.platform == "win32":
             return _enable_windows()
@@ -78,6 +103,41 @@ def enable() -> int:
     except Exception as exc:
         print(f"[ghlink] enable 失败: {exc}", file=sys.stderr)
         return 2
+
+
+def _ensure_config() -> None:
+    """确保配置文件存在：目标 _config_path()，缺失则从 config.example.json 复制。
+
+    2026-08-17 拂晓/顾笙双端实锤 Bug B：deb/brew 装完 /etc/ghlink/config.json
+    可能不存在（brew 不落配置、deb 路径不一致），LaunchDaemon/systemd 裸跑
+    直接读不到 → 值守僵尸。enable 前兜底复制，保证注册即能跑。
+    """
+    import shutil as _shutil
+
+    cfg_path = _config_path()
+    if os.path.exists(cfg_path):
+        return
+    # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share
+    candidates = [
+        os.path.join(os.getcwd(), "config.example.json"),
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config.example.json",
+        ),
+        "/usr/local/Cellar/ghlink/libexec/config.example.json",
+        "/usr/share/ghlink/config.example.json",
+        "/usr/lib/ghlink/config.example.json",
+    ]
+    for src in candidates:
+        if os.path.exists(src):
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+            _shutil.copy(src, cfg_path)
+            print(f"[ghlink] 已生成默认配置: {cfg_path}")
+            return
+    print(
+        f"[ghlink] 警告：找不到 config.example.json 模板，跳过配置落位（{cfg_path}）",
+        file=sys.stderr,
+    )
 
 
 def disable() -> int:
@@ -310,6 +370,38 @@ def _is_registered() -> bool:
         return False
 
 
+def _tray_single_instance() -> bool:
+    """单实例锁：已有托盘实例则返回 True（本次应退出）。
+
+    - Windows：命名互斥体（CreateMutex）——PyInstaller onefile 下 exe 运行时
+      是「引导进程 + Python 子进程」两个同名进程，tasklist 排除自身 PID 仍会
+      误判引导进程为已有实例（李工 14:40 反馈：Windows 托盘闪退根因）。
+      命名互斥体是 Windows 标准单实例方案，onefile 下可靠。
+    - macOS/Linux：pgrep/tasklist 排除自身 PID。
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            global _TRAY_MUTEX_HANDLE
+            # Global\ 前缀：跨会话可见（防快速用户切换/RDP 双会话单实例失效）
+            handle = ctypes.windll.kernel32.CreateMutexW(
+                None, False, "Global\\ghlink-tray-singleton"
+            )
+            if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+                return True
+            # 模块级持有句柄（防 GC 释放互斥体导致锁失效）
+            _TRAY_MUTEX_HANDLE = handle
+            return False
+        except Exception:
+            return False
+    return _tray_alive(exclude_pid=os.getpid())
+
+
+# Windows 命名互斥体句柄（模块级持有，防 GC）
+_TRAY_MUTEX_HANDLE = None
+
+
 def _tray_alive(exclude_pid: int = 0) -> bool:
     """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。
 
@@ -457,9 +549,7 @@ def _enable_macos() -> int:
     <key>Label</key><string>com.ghlink.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{sys.executable}</string>
-        <string>-m</string>
-        <string>ghlink.main</string>
+        <string>{_python_cmd().strip(chr(34))}</string>
         <string>{_config_path()}</string>
     </array>
     <key>StartInterval</key><integer>60</integer>
@@ -499,7 +589,8 @@ def _enable_windows() -> int:
         watch = os.path.join(exe_dir, "ghlink-watch.exe")
         tr = f'"{watch}" {_config_path()}'
     else:
-        tr = f"{sys.executable} -m ghlink.main {_config_path()}"
+        # 2026-08-17 Bug A 修复：非 frozen 也用 wrapper 入口（带 PYTHONPATH）
+        tr = f"{_python_cmd()} {_config_path()}"
     args = [
         "schtasks",
         "/Create",
