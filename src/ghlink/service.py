@@ -62,6 +62,8 @@ def _state_path() -> str:
 
     与 tray.py 同模式（赛博 08:51 复核指出：config.json 本身无 timestamp 字段，
     直接读 config 会把配置当状态文件，导致心跳恒判不新鲜）。
+    2026-08-17 赛博补强（Bug B 根治）：相对路径→相对 config.json 目录解析，
+    避免 systemd/LaunchDaemon（cwd=/）与 CLI（cwd=用户目录）读写不一致。
     """
     cfg_path = _config_path()
     st_path = "ghlink_status.json"
@@ -74,6 +76,9 @@ def _state_path() -> str:
             st_path = cfg.get("state_file", "ghlink_status.json")
         except Exception:
             pass
+    # 相对路径 → 相对 config.json 所在目录；绝对路径原样返回
+    if st_path and not os.path.isabs(st_path):
+        st_path = os.path.join(os.path.dirname(os.path.abspath(cfg_path)), st_path)
     return st_path
 
 

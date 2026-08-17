@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from ghlink import service
+from ghlink import main, service
 
 
 class TestIsRegistered:
@@ -178,6 +178,31 @@ class TestEnsureConfig:
         service._ensure_config()
         assert cfg.exists()
         assert "var/lib/ghlink" in cfg.read_text(encoding="utf-8")
+
+
+class TestResolveRel:
+    """相对路径 → 相对 config.json 目录解析（2026-08-17 赛博补强，Bug B 根治）。"""
+
+    def test_absolute_unchanged(self):
+        assert (
+            main._resolve_rel("/var/lib/ghlink/x.json", "/etc/ghlink/config.json")
+            == "/var/lib/ghlink/x.json"
+        )
+
+    def test_relative_resolved_to_config_dir(self):
+        assert (
+            main._resolve_rel("ghlink_status.json", "/etc/ghlink/config.json")
+            == "/etc/ghlink/ghlink_status.json"
+        )
+
+    def test_empty_unchanged(self):
+        assert main._resolve_rel("", "/etc/ghlink/config.json") == ""
+
+    def test_lock_and_backup_relative(self):
+        assert (
+            main._resolve_rel("ghlink.lock", "/etc/ghlink/config.json") == "/etc/ghlink/ghlink.lock"
+        )
+        assert main._resolve_rel("backup", "/etc/ghlink/config.json") == "/etc/ghlink/backup"
 
 
 class TestHeartbeatFresh:

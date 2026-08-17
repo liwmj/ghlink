@@ -6,6 +6,7 @@
 退出码：0=正常（含跳过） 1=降级/告警 2=配置/参数错误（供定时任务日志区分）
 """
 
+import os
 import sys
 import time
 from typing import Any, Dict
@@ -14,16 +15,29 @@ from . import config as cfgmod
 from . import hosts_manager, lock, notifier, probe, resolver, service, state
 
 
-def _state_path(cfg: Dict[str, Any]) -> str:
-    return cfg.get("state_file", "ghlink_status.json")
+def _resolve_rel(value: str, config_path: str) -> str:
+    """相对路径 → 相对 config.json 所在目录解析；绝对路径原样返回。
+
+    2026-08-17 赛博补强（Bug B 根治）：老配置/用户自定义的相对路径
+    state_file/lock_file/backup 仍会依赖 cwd（systemd 写 /、CLI 读 cwd），
+    必须统一相对 config 目录解析，不靠打包补丁。
+    """
+    if not value or os.path.isabs(value):
+        return value
+    base = os.path.dirname(os.path.abspath(config_path))
+    return os.path.join(base, value)
 
 
-def _lock_path(cfg: Dict[str, Any]) -> str:
-    return cfg.get("lock_file", "ghlink.lock")
+def _state_path(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+    return _resolve_rel(cfg.get("state_file", "ghlink_status.json"), config_path)
 
 
-def _backup_dir(cfg: Dict[str, Any]) -> str:
-    return cfg.get("hosts_backup_dir", "backup")
+def _lock_path(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+    return _resolve_rel(cfg.get("lock_file", "ghlink.lock"), config_path)
+
+
+def _backup_dir(cfg: Dict[str, Any], config_path: str = "config.json") -> str:
+    return _resolve_rel(cfg.get("hosts_backup_dir", "backup"), config_path)
 
 
 def _targets(cfg: Dict[str, Any]) -> list:
@@ -51,12 +65,12 @@ def run(config_path: str = "config.json") -> int:
     consecutive_needed = int(cfg.get("trigger", {}).get("consecutive_failures", 3))
     verify_rounds = int(cfg.get("trigger", {}).get("verify_success_rounds", 2))
 
-    st_path = _state_path(cfg)
+    st_path = _state_path(cfg, config_path)
     st = state.load(st_path)
     webhook = cfg.get("notify", {}).get("feishu_webhook", "")
     notify_enabled = bool(cfg.get("notify", {}).get("enabled", True))
 
-    with lock.acquire(_lock_path(cfg)) as got:
+    with lock.acquire(_lock_path(cfg, config_path)) as got:
         if not got:
             # 已有实例在跑，本轮跳过（不阻塞不排队）
             return 0
@@ -127,7 +141,7 @@ def run(config_path: str = "config.json") -> int:
             return 1
 
         block = hosts_manager.build_block(entries)
-        ok_apply, backup_path = hosts_manager.apply_block(block, _backup_dir(cfg))
+        ok_apply, backup_path = hosts_manager.apply_block(block, _backup_dir(cfg, config_path))
         if not ok_apply:
             st["state"] = "degraded"
             st["last_error"] = "hosts write failed (privilege/permission)"
