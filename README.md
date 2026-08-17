@@ -226,7 +226,7 @@ python -m ghlink.main config.json
 
 ### GitHub520 社区 IP 集成（v0.2.18）
 
-g	hlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社区 hosts（默认 1 小时刷新），为非核心 GitHub 域名（raw/objects/gist 等）补充社区 IP，覆盖自愈盲区。**核心域名（github.com/api.github.com）永远由 ghlink 自愈动态验证兜底**，社区 IP 只补非核心盲区、写入前做 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存。
+ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社区 hosts（默认 1 小时刷新），为非核心 GitHub 域名（raw/objects/gist 等）补充社区 IP，覆盖自愈盲区。**核心域名（github.com/api.github.com）永远由 ghlink 自愈动态验证兜底**，社区 IP 只补非核心盲区、写入前做 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存。
 
 ---
 
