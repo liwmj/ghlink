@@ -30,13 +30,16 @@ def _safe_lock_path(lock_path: str) -> str:
     """校验并规范化锁文件路径（SonarCloud S8707：防符号链接/路径逃逸）。
 
     要求：绝对路径 + realpath 解析符号链接 + 路径必须位于允许目录
-    （/var/lib/ghlink、/tmp、/var/tmp 或用户主目录）内。
+    （/var/lib/ghlink、系统临时目录、/tmp、/var/tmp 或用户主目录）内。
     """
+    import tempfile
+
     resolved = os.path.realpath(lock_path)
     if not os.path.isabs(resolved):
         raise ValueError(f"lock path must be absolute: {lock_path}")
     allowed_roots = (
         "/var/lib/ghlink",
+        tempfile.gettempdir(),
         "/tmp",
         "/var/tmp",
         os.path.expanduser("~"),
