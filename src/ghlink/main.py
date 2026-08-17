@@ -169,6 +169,9 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         # 社区 IP 只补非核心盲区；两者不冲突——ghlink 条目优先）
         merged_entries = dict(entries)
         for d, ips in github520_entries.items():
+            # 降级域名不写入（与 active 判定一致：坏域名不入场）
+            if st.get("probe", {}).get("targets", {}).get(d, {}).get("degraded"):
+                continue
             merged_entries.setdefault(d, ips)
         if merged_entries != entries:
             block = hosts_manager.build_block(merged_entries)
