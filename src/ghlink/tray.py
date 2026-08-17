@@ -366,10 +366,12 @@ def main() -> int:
         return 2
 
     # ③ 单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程则提示退出
-    # 赛博 09:56 问题 B：pgrep -f "ghlink.*tray" 会匹配到正在启动的自身进程，
-    # 必须排除自身 PID（os.getpid()），否则首次 ghlink tray 会被自己挡住直接退出
+    # 李工 14:40 反馈 Windows 托盘闪退根因：PyInstaller onefile 下 exe 运行时
+    # 是「引导进程 + Python 子进程」两个同名进程，tasklist 排除自身 PID 仍会
+    # 误判引导进程为已有实例 → 托盘启动即退出。改用 _tray_single_instance()
+    # （Windows 命名互斥体，macOS/Linux 保留 pgrep 排除自身）
     try:
-        if service._tray_alive(exclude_pid=os.getpid()):
+        if service._tray_single_instance():
             print(
                 "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
                 file=sys.stderr,

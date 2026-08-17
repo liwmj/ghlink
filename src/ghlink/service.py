@@ -370,6 +370,34 @@ def _is_registered() -> bool:
         return False
 
 
+def _tray_single_instance() -> bool:
+    """单实例锁：已有托盘实例则返回 True（本次应退出）。
+
+    - Windows：命名互斥体（CreateMutex）——PyInstaller onefile 下 exe 运行时
+      是「引导进程 + Python 子进程」两个同名进程，tasklist 排除自身 PID 仍会
+      误判引导进程为已有实例（李工 14:40 反馈：Windows 托盘闪退根因）。
+      命名互斥体是 Windows 标准单实例方案，onefile 下可靠。
+    - macOS/Linux：pgrep/tasklist 排除自身 PID。
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            handle = ctypes.windll.kernel32.CreateMutexW(None, False, "ghlink-tray-singleton")
+            if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+                return True
+            # 保持句柄存活（防止 GC 释放互斥体导致锁失效）
+            _TRAY_MUTEX_HANDLE = handle
+            return False
+        except Exception:
+            return False
+    return _tray_alive(exclude_pid=os.getpid())
+
+
+# Windows 命名互斥体句柄（模块级持有，防 GC）
+_TRAY_MUTEX_HANDLE = None
+
+
 def _tray_alive(exclude_pid: int = 0) -> bool:
     """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。
 
