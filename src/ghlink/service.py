@@ -383,10 +383,14 @@ def _tray_single_instance() -> bool:
         try:
             import ctypes
 
-            handle = ctypes.windll.kernel32.CreateMutexW(None, False, "ghlink-tray-singleton")
+            global _TRAY_MUTEX_HANDLE
+            # Global\ 前缀：跨会话可见（防快速用户切换/RDP 双会话单实例失效）
+            handle = ctypes.windll.kernel32.CreateMutexW(
+                None, False, "Global\\ghlink-tray-singleton"
+            )
             if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
                 return True
-            # 保持句柄存活（防止 GC 释放互斥体导致锁失效）
+            # 模块级持有句柄（防 GC 释放互斥体导致锁失效）
             _TRAY_MUTEX_HANDLE = handle
             return False
         except Exception:
