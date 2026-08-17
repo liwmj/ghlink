@@ -1,4 +1,4 @@
-"""入口：单轮执行（调度粒度 1min，由平台定时任务调用）。
+"""入口：单轮执行（调度粒度 1h（v0.2.18 起），由平台定时任务调用）。
 
 流程：锁 → 探测 → 计数判定（成功清零）→ 触发则 取IP→备份→写入→flushdns→自检
 → 成功更新状态 / 失败回滚+degraded → 告警（冷却期去重）→ 写状态文件。
@@ -87,6 +87,21 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             st["probe"]["targets"].setdefault(h, {})["ok"] = bool(r.get("ok"))
         ok = probe.round_ok({h: r for h, r in results.items() if h in active})
 
+        # v0.2.18（李工 23:21 并入 v0.2.19 规划）：GitHub520 hosts 段同步——
+        # 非核心域名用社区 IP 合入段落（核心域名仍由 ghlink 自愈动态兜底）；
+        # 无论探测结果如何都尝试同步（独立段落，不阻塞自愈主流程）
+        github520_entries: Dict[str, list] = {}
+        try:
+            from . import github520 as g520
+
+            st_dir = os.path.dirname(os.path.abspath(st_path)) if st_path else ""
+            github520_entries = g520.sync_github520(cfg, st_dir)
+            if github520_entries:
+                st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                st["github520"]["domains"] = len(github520_entries)
+        except Exception:
+            pass
+
         # 2) 计数判定：成功清零，失败累加
         if ok:
             st["probe"]["consecutive_failures"] = 0
@@ -108,9 +123,10 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         st["probe"]["consecutive_failures"] = st.get("probe", {}).get("consecutive_failures", 0) + 1
         failed = st["probe"]["consecutive_failures"]
 
-        # P0-2: 冷却期判断基于 switched_at 时间差，与 state 解耦（避免切换成功后冷却失效）
-        switched_at = float(st.get("switched_at") or 0)
-        if switched_at and (time.time() - switched_at) < _cooldown_sec(cfg):
+        # P0-2: 冷却期判断基于 last_switched_at 时间差，与 state 解耦（避免切换成功后冷却失效）
+        # v0.2.18 方案④：统一字段名 last_switched_at（兼容旧 switched_at）
+        last_switched = float(st.get("last_switched_at") or st.get("switched_at") or 0)
+        if last_switched and (time.time() - last_switched) < _cooldown_sec(cfg):
             state.save(st_path, st)
             return 0
 
@@ -121,7 +137,7 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
 
         # 4) 达到阈值 → 自愈：对活跃探测域名取 IP → 写 hosts → 自检
         st["state"] = "switching"
-        st["switched_at"] = time.time()
+        st["last_switched_at"] = time.time()  # v0.2.18 方案④：统一字段名
         st["verify_success"] = 0
         # 提醒2: 提权 exit 前先落盘 switching 状态（Windows runas 后旧进程退出不丢标记）
         state.save(st_path, st)
@@ -150,6 +166,16 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             return 1
 
         block = hosts_manager.build_block(entries)
+        # v0.2.18：GitHub520 非核心域名合入同一段落（核心域名 entries 已覆盖，
+        # 社区 IP 只补非核心盲区；两者不冲突——ghlink 条目优先）
+        merged_entries = dict(entries)
+        for d, ips in github520_entries.items():
+            # 降级域名不写入（与 active 判定一致：坏域名不入场）
+            if st.get("probe", {}).get("targets", {}).get(d, {}).get("degraded"):
+                continue
+            merged_entries.setdefault(d, ips)
+        if merged_entries != entries:
+            block = hosts_manager.build_block(merged_entries)
         ok_apply, backup_path = hosts_manager.apply_block(block, _backup_dir(cfg, config_path))
         if not ok_apply:
             st["state"] = "degraded"
@@ -295,7 +321,7 @@ def main() -> None:
     if first in ("--help", "-h"):
         print("用法: ghlink [run|enable|disable|status|tray] [config.json]")
         print("  run      单轮探测+自愈（默认，可省略）")
-        print("  enable   注册定时任务（1 分钟粒度，需管理员/root）")
+        print("  enable   注册定时任务（1 小时粒度，需管理员/root）")
         print("  disable  移除定时任务")
         print("  status   显示当前状态与值守情况")
         print("  tray     系统托盘（Windows/macOS，需安装包版；Linux 纯 CLI）")

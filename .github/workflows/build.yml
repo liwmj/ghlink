@@ -141,3 +141,35 @@ jobs:
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
           generate_release_notes: true
+
+  deploy-pages:
+    name: Deploy apt repo to GitHub Pages
+    needs: [build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write  # 部署 GitHub Pages 需要
+      id-token: write  # deploy-pages 需要 OIDC
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-repo
+          path: apt-repo
+      # Pages 站点根 = https://liwmj.github.io/ghlink/，apt 仓库放 apt/ 子目录
+      # → 固定 URL https://liwmj.github.io/ghlink/apt/（李工 23:39 已建 Pages，源选 Actions）
+      # 赛博 00:16 核对点①：Packages 的 Filename 已去 pool/main 前缀，
+      # deb 必须提升到 apt 根目录，否则 apt 按 Filename 拼 URL → 404
+      - name: Prepare pages content (apt/)
+        run: |
+          mkdir -p _site/apt
+          cp apt-repo/pool/main/*.deb _site/apt/
+          cp apt-repo/Packages.gz apt-repo/Release _site/apt/
+          ls -la _site/apt/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

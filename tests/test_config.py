@@ -17,7 +17,8 @@ class TestLoadDefaults:
         # 核心段齐全，值取 config.example.json 的默认
         assert set(["probe", "trigger", "resolver", "notify"]).issubset(cfg)
         assert cfg["trigger"]["consecutive_failures"] == 3
-        assert cfg["trigger"]["cooldown_min"] == 15
+        # v0.2.18（李工 22:27 定：探测 1 小时）：cooldown 15→180min 按 1h 粒度核算
+        assert cfg["trigger"]["cooldown_min"] == 180
         assert cfg["probe"]["timeout_sec"] == 15
 
     def test_alert_default_enabled(self, tmp_path):

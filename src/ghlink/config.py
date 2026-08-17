@@ -19,17 +19,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "api.github.com",
             "codeload.github.com",
             "github.global.ssl.fastly.net",
+            # v0.2.18 扩域（赛博 22:20 定案，李工 23:21 批准并入 v0.2.19 规划）：
+            # GitHub 生态核心域名，覆盖 clone/raw/release 下载链盲区
+            "raw.githubusercontent.com",
+            "objects.githubusercontent.com",
+            "gist.github.com",
+            "github.githubassets.com",
         ],
         "timeout_sec": 15,  # v0.2.8：5→15（慢链路不误杀，李工 23:15 实测定论）
         # 目标域名健康度管理（v0.2）：长期不可达域名自动降级，核心域名优先保证切换成功
         "core_targets": ["github.com", "api.github.com"],  # 核心域名永不降级
-        "degrade_after_rounds": 10,  # 非核心域名连续失败 N 轮 → 降级（1min 粒度 ≈ 10min）
+        "degrade_after_rounds": 3,  # v0.2.18：非核心域名连续失败 N 轮 → 降级（1h 粒度 ≈ 3h）
         "recover_rounds": 2,  # 降级域名连续成功 N 轮 → 恢复纳入
     },
     "trigger": {
-        "consecutive_failures": 3,
-        "cooldown_min": 15,
-        "verify_success_rounds": 2,
+        # v0.2.18（李工 22:27 定：探测 1 小时不频繁）：阈值按 1h 粒度核算
+        "consecutive_failures": 3,  # 连续 3 小时失败才触发切换
+        "cooldown_min": 180,  # 切换冷却 3 小时（原 15min 在 1h 粒度下无意义）
+        "verify_success_rounds": 2,  # 切换后连续 2 小时成功才回 normal
     },
     "resolver": {
         "doh_sources": [
