@@ -123,9 +123,10 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         st["probe"]["consecutive_failures"] = st.get("probe", {}).get("consecutive_failures", 0) + 1
         failed = st["probe"]["consecutive_failures"]
 
-        # P0-2: 冷却期判断基于 switched_at 时间差，与 state 解耦（避免切换成功后冷却失效）
-        switched_at = float(st.get("switched_at") or 0)
-        if switched_at and (time.time() - switched_at) < _cooldown_sec(cfg):
+        # P0-2: 冷却期判断基于 last_switched_at 时间差，与 state 解耦（避免切换成功后冷却失效）
+        # v0.2.18 方案④：统一字段名 last_switched_at（兼容旧 switched_at）
+        last_switched = float(st.get("last_switched_at") or st.get("switched_at") or 0)
+        if last_switched and (time.time() - last_switched) < _cooldown_sec(cfg):
             state.save(st_path, st)
             return 0
 
@@ -136,7 +137,7 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
 
         # 4) 达到阈值 → 自愈：对活跃探测域名取 IP → 写 hosts → 自检
         st["state"] = "switching"
-        st["switched_at"] = time.time()
+        st["last_switched_at"] = time.time()  # v0.2.18 方案④：统一字段名
         st["verify_success"] = 0
         # 提醒2: 提权 exit 前先落盘 switching 状态（Windows runas 后旧进程退出不丢标记）
         state.save(st_path, st)

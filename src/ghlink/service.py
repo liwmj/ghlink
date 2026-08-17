@@ -201,7 +201,7 @@ def status() -> int:
     print(f"当前IP: {cur_ip or '-'}")
     print(f"失败计数: {st.get('probe', {}).get('consecutive_failures', 0)}")
     print(f"最近错误: {st.get('last_error') or '-'}")
-    switched = st.get("switched_at")
+    switched = st.get("last_switched_at") or st.get("switched_at")  # v0.2.18 方案④：兼容旧字段
     print(
         "上次切换: "
         + (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(switched)) if switched else "-")
