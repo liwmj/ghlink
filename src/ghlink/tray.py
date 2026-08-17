@@ -366,9 +366,10 @@ def main() -> int:
         return 2
 
     # ③ 单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程则提示退出
-    # macOS pgrep / Windows tasklist；排除自身进程（pgrep -f 可能匹配到当前命令行）
+    # 赛博 09:56 问题 B：pgrep -f "ghlink.*tray" 会匹配到正在启动的自身进程，
+    # 必须排除自身 PID（os.getpid()），否则首次 ghlink tray 会被自己挡住直接退出
     try:
-        if service._tray_alive():
+        if service._tray_alive(exclude_pid=os.getpid()):
             print(
                 "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
                 file=sys.stderr,

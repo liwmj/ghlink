@@ -107,7 +107,7 @@ for i in 1 2 3 4 5; do
 done
 if [ "$s" = "degraded" ]; then
   e=$(err "$TMP/state.json")
-  ok "② 切换降级宽容（网络受限 degraded: $e，正确行为；真机切换验证另挂）"
+  ok "② 切换降级宽容（网络受限 degraded: ${e}，正确行为；真机切换验证另挂）"
   code="N/A"
   bad_flip=0
 elif grep -q "ghlink Start" "$HOSTS" && ! grep -q "127.0.0.1 github.com" "$HOSTS"; then

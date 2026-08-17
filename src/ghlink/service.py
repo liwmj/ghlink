@@ -115,8 +115,8 @@ def status() -> int:
         "上次切换: "
         + (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(switched)) if switched else "-")
     )
-    # 值守判断（双确认，2026-08-17 赛博复核口径）：
-    # macOS/Windows 主判据=托盘进程存活；Linux 主判据=平台任务注册；次判据=心跳新鲜
+    # 值守判断（2026-08-17 李工新口径：值守独立于托盘）
+    # 主判据=平台任务注册；次判据=心跳新鲜；托盘进程仅展示层
     print(f"值守: {_watch_status_text()}")
     history = st.get("history") or []
     if history:
@@ -230,10 +230,6 @@ def _enable_autostart() -> bool:
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
-            # ③ 单实例（李工 09:49 反馈）：托盘已在跑则不重复拉起 LaunchAgent
-            if _tray_alive():
-                print("[ghlink] 托盘已在运行，自启动注册跳过拉起（避免多实例）")
-                return True
             # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
             exe = shutil.which("ghlink") or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
@@ -247,7 +243,12 @@ def _enable_autostart() -> bool:
 """)
             import subprocess as _sp
 
-            _sp.run(["launchctl", "load", plist], check=False)
+            # 赛博 09:56 问题 A：plist 照写（自启动注册必须成功），
+            # 已在跑时不重复 load（避免多实例），靠单实例锁兜底
+            if not _tray_alive(exclude_pid=os.getpid()):
+                _sp.run(["launchctl", "load", plist], check=False)
+            else:
+                print("[ghlink] 托盘已在运行，仅注册自启动（不重复拉起）")
             return True
         else:
             autostart_dir = os.path.expanduser("~/.config/autostart")
@@ -309,17 +310,37 @@ def _is_registered() -> bool:
         return False
 
 
-def _tray_alive() -> bool:
-    """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。"""
+def _tray_alive(exclude_pid: int = 0) -> bool:
+    """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。
+
+    exclude_pid：排除指定 PID（单实例锁用，防止 pgrep 匹配到正在启动的自身进程）。
+    """
     try:
         if sys.platform == "win32":
             out = platform_adapter._run_cmd_output(
-                ["tasklist", "/FI", "IMAGENAME eq ghlink-tray.exe"]
+                ["tasklist", "/FO", "CSV", "/FI", "IMAGENAME eq ghlink-tray.exe"]
             )
-            return "ghlink-tray.exe" in (out or "")
+            if "ghlink-tray.exe" not in (out or ""):
+                return False
+            if exclude_pid:
+                import csv as _csv
+                import io as _io
+
+                for row in _csv.reader(_io.StringIO(out or "")):
+                    if len(row) >= 2 and row[0].strip('"') == "ghlink-tray.exe":
+                        try:
+                            if int(row[1]) != exclude_pid:
+                                return True
+                        except ValueError:
+                            pass
+                return False
+            return True
         elif sys.platform == "darwin":
             out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
-            return bool(out and out.strip())
+            pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
+            if exclude_pid:
+                pids = [p for p in pids if p != exclude_pid]
+            return bool(pids)
         return False
     except Exception:
         return False
