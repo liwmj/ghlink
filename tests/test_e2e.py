@@ -210,9 +210,9 @@ class TestFullCycle:
             main.run(cfg_path)
         assert verify_calls, "verify_after_apply 应被调用"
         last_verify = verify_calls[-1]
-        assert (
-            "github.global.ssl.fastly.net" not in last_verify
-        ), f"verify 不应含 fastly: {last_verify}"
+        assert "github.global.ssl.fastly.net" not in last_verify, (
+            f"verify 不应含 fastly: {last_verify}"
+        )
         assert "github.com" in last_verify and "api.github.com" in last_verify
 
     def test_privilege_failure_state_saved(self, tmp_path, monkeypatch):
