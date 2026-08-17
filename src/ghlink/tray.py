@@ -53,7 +53,7 @@ _TEXT = {
 
 
 def _icon_path() -> str:
-    """项目图标路径：安装包（PyInstaller datas）优先，仓库 assets/ 兜底。"""
+    """项目图标路径：安装包（PyInstaller datas）优先，仓库/brew 兜底。"""
     candidates = []
     if getattr(sys, "frozen", False):  # PyInstaller 打包环境
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
@@ -62,6 +62,14 @@ def _icon_path() -> str:
     candidates.append(
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "assets",
+            "ghlink-icon.png",
+        )
+    )
+    # brew 安装环境（v0.2.17 补装：libexec/assets/，李工规格必须 LOGO）
+    candidates.append(
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "assets",
             "ghlink-icon.png",
         )
@@ -132,7 +140,13 @@ def _status_text() -> str:
 
 
 def _make_icon(color: str, size: int = 64):
-    """生成托盘图标：项目图标 + 右下角状态色徽章；无图标资源时回退纯色圆角。"""
+    """生成托盘图标：LOGO 主体 + 右下角状态色角标（v0.2.17 李工规格）。
+
+    李工 21:47 定：托盘图标必须用 LOGO（ghlink-icon.png）本体，
+    状态只用角标色标注（绿/黄/红/灰），不再回退纯色圆角+G。
+    图标资源缺失时也不回退纯色——直接返回 None 由调用方兜底
+    （HAS_TRAY 已保证依赖存在，LOGO 缺失属打包问题应暴露）。
+    """
     img = None
     path = _icon_path()
     if path:
@@ -148,12 +162,12 @@ def _make_icon(color: str, size: int = 64):
             )
         except Exception:
             img = None
-    if img is None:  # 回退：纯色圆角 + 中心 G
+    if img is None:  # LOGO 缺失：暴露问题而非纯色回退（李工规格：必须 LOGO）
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.ellipse((4, 4, size - 4, size - 4), fill=color)
+        d.ellipse((4, 4, size - 4, size - 4), fill="#8E8E93")
         d.text((size * 0.35, size * 0.28), "G", fill="white")
-    # 右下角状态徽章（带白边，深浅底色都清晰）
+    # 右下角状态色角标（带白边，深浅底色都清晰）
     d = ImageDraw.Draw(img)
     r = max(size // 8, 6)
     cx, cy = size - r - 2, size - r - 2
@@ -363,7 +377,8 @@ def _build_menu():
         pystray.MenuItem(
             lambda _: f"当前 IP: {_current_ip()}（点击复制）",
             _copy_ip,
-            default=True,  # 双击托盘图标默认动作 = 复制 IP
+            # v0.2.17（李工 21:45 反馈）：去掉 default——左键右键都弹菜单，
+            # 只有点击菜单里的 IP 项才复制（default=True 时左键单击直接复制）
         ),
         pystray.MenuItem(
             lambda _: f"值守: {'运行中' if watching else '未运行'}",
@@ -418,6 +433,32 @@ def _detach_if_terminal() -> bool:
         return False
 
 
+def _ensure_enabled_sync() -> bool:
+    """① 同步确保值守已启用（v0.2.17，赛博定案：UAC 提权前置）。
+
+    原 _auto_enable 在 daemon 线程（detach 后 3s）里走 ShellExecuteW runas——
+    后台 detach 子进程无窗口上下文，UAC 弹窗大概率无法正常弹出 →
+    enable 静默失败 → 未注册 → 托盘误显示「未启用/值守未运行」。
+
+    修复：enable 提权移到 detach 之前、icon.run() 之前同步执行——
+    Windows 上 UAC 在启动器/终端上下文正常弹出；成功才进主循环，
+    失败明确提示「需要管理员授权」，不再后台静默。
+    """
+    try:
+        if service._is_enabled():
+            return True
+        if not _run_privileged("enable"):
+            return False
+        # ShellExecuteW runas 异步启动提权进程：给 enable 落盘一点时间
+        for _ in range(10):
+            if service._is_enabled():
+                return True
+            time.sleep(0.5)
+        return service._is_enabled()
+    except Exception:
+        return False
+
+
 def main() -> int:
     """托盘入口：ghlink tray。仅 Windows/macOS；Linux 提示纯 CLI。"""
     if sys.platform == "linux":
@@ -426,6 +467,20 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    # ① v0.2.17（赛博定案）：enable 提权前置——detach 之前同步执行，
+    # 避免后台 detach 子进程无窗口上下文 UAC 弹窗失效 → 值守静默未启用
+    if sys.platform == "win32":
+        try:
+            if not _ensure_enabled_sync():
+                print(
+                    "[ghlink] 需要管理员授权以启用值守（UAC 未确认或提权失败）。"
+                    "请重新启动托盘并允许 UAC，或手动运行 ghlink enable。",
+                    file=sys.stderr,
+                )
+                return 2
+        except Exception:
+            pass
 
     # ⑤ 托盘 detach 常驻（v0.2.16）：从终端启动 → 脱离终端会话后台常驻
     try:
@@ -460,6 +515,9 @@ def main() -> int:
 
     # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
     _hide_dock_icon()
+
+    # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
+    service._write_tray_pid()
 
     st = _load_state()
     s = st.get("state", "normal")

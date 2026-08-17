@@ -57,8 +57,13 @@ class TestIsRegistered:
 class TestTrayAlive:
     """值守载体（托盘进程）存活检测（含 exclude_pid 排除自身，赛博 09:56 问题 B）。"""
 
-    def test_macos_tray_running(self, monkeypatch):
+    def _mock_pid_file_gone(self, monkeypatch, tmp_path):
+        """⑤ v0.2.17：PID 文件兜底——测试隔离到不存在的路径，强制走 pgrep 分支。"""
+        monkeypatch.setattr(service, "_tray_pid_file", lambda: str(tmp_path / "nope-tray.pid"))
+
+    def test_macos_tray_running(self, monkeypatch, tmp_path):
         monkeypatch.setattr(service.sys, "platform", "darwin")
+        self._mock_pid_file_gone(monkeypatch, tmp_path)
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
@@ -66,8 +71,9 @@ class TestTrayAlive:
         )
         assert service._tray_alive() is True
 
-    def test_macos_tray_not_running(self, monkeypatch):
+    def test_macos_tray_not_running(self, monkeypatch, tmp_path):
         monkeypatch.setattr(service.sys, "platform", "darwin")
+        self._mock_pid_file_gone(monkeypatch, tmp_path)
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
@@ -75,9 +81,10 @@ class TestTrayAlive:
         )
         assert service._tray_alive() is False
 
-    def test_macos_exclude_self_only(self, monkeypatch):
+    def test_macos_exclude_self_only(self, monkeypatch, tmp_path):
         """pgrep 只匹配到自身 PID → 排除后无实例（首次启动不被自己挡住）。"""
         monkeypatch.setattr(service.sys, "platform", "darwin")
+        self._mock_pid_file_gone(monkeypatch, tmp_path)
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
@@ -85,15 +92,30 @@ class TestTrayAlive:
         )
         assert service._tray_alive(exclude_pid=99999) is False
 
-    def test_macos_exclude_self_with_other(self, monkeypatch):
+    def test_macos_exclude_self_with_other(self, monkeypatch, tmp_path):
         """除自身外还有旧实例 → 排除后仍有实例（单实例锁应拦截）。"""
         monkeypatch.setattr(service.sys, "platform", "darwin")
+        self._mock_pid_file_gone(monkeypatch, tmp_path)
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
             lambda args: "99999\n12345\n",  # 99999=自身, 12345=旧实例
         )
         assert service._tray_alive(exclude_pid=99999) is True
+
+    def test_macos_pid_file_primary(self, monkeypatch, tmp_path):
+        """⑤ v0.2.17：PID 文件存在且存活 → 直接判 True（pgrep 兜底不触发）。"""
+        monkeypatch.setattr(service.sys, "platform", "darwin")
+        pid_file = tmp_path / "tray.pid"
+        pid_file.write_text(str(99991), encoding="utf-8")
+        monkeypatch.setattr(service, "_tray_pid_file", lambda: str(pid_file))
+        monkeypatch.setattr(
+            service.platform_adapter,
+            "_run_cmd_output",
+            lambda args: "",  # pgrep 返回空也不影响：PID 文件优先
+        )
+        monkeypatch.setattr(service, "_pid_alive", lambda pid: pid == 99991)
+        assert service._tray_alive() is True
 
     def test_windows_tray_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "win32")

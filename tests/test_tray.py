@@ -36,6 +36,9 @@ def test_tray_single_instance_guard_windows(monkeypatch):
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "win32")
     monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: True)
+    # v0.2.17 ①：enable 提权前置（Windows 分支 detach 前同步）——mock 值守已启用跳过
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)
+    monkeypatch.setattr(tray, "_ensure_enabled_sync", lambda: True)
     assert tray.main() == 0
 
 
