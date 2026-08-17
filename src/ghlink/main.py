@@ -1,4 +1,4 @@
-"""入口：单轮执行（调度粒度 1min，由平台定时任务调用）。
+"""入口：单轮执行（调度粒度 1h（v0.2.18 起），由平台定时任务调用）。
 
 流程：锁 → 探测 → 计数判定（成功清零）→ 触发则 取IP→备份→写入→flushdns→自检
 → 成功更新状态 / 失败回滚+degraded → 告警（冷却期去重）→ 写状态文件。
@@ -295,7 +295,7 @@ def main() -> None:
     if first in ("--help", "-h"):
         print("用法: ghlink [run|enable|disable|status|tray] [config.json]")
         print("  run      单轮探测+自愈（默认，可省略）")
-        print("  enable   注册定时任务（1 分钟粒度，需管理员/root）")
+        print("  enable   注册定时任务（1 小时粒度，需管理员/root）")
         print("  disable  移除定时任务")
         print("  status   显示当前状态与值守情况")
         print("  tray     系统托盘（Windows/macOS，需安装包版；Linux 纯 CLI）")

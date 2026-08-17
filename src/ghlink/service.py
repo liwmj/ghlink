@@ -1,7 +1,7 @@
 """定时任务注册/管理服务（v0.2 阶段 1）。
 
 提供 ghlink enable / disable / status 三命令的跨平台实现：
-- enable：注册 1 分钟粒度定时任务（systemd timer / crontab / LaunchDaemon / schtasks）
+- enable：注册 1 小时粒度定时任务（v0.2.18 起）（systemd timer / crontab / LaunchDaemon / schtasks）
 - disable：移除定时任务
 - status：显示当前状态 + 值守状态
 
@@ -503,8 +503,8 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
         return False
 
 
-def _heartbeat_fresh(max_age_sec: int = 180) -> bool:
-    """状态文件心跳是否新鲜（探测 1 分钟粒度，默认 3 分钟宽限）。
+def _heartbeat_fresh(max_age_sec: int = 5400) -> bool:
+    """状态文件心跳是否新鲜（探测 1 小时粒度，v0.2.18 宽限 90 分钟）。
 
     状态文件由 run() 每轮探测后 save 更新 timestamp；心跳停 = 探测循环没在跑。
     """
@@ -551,11 +551,11 @@ ExecStart={_python_cmd()} {_config_path()}
 WantedBy=multi-user.target
 """
         timer = """[Unit]
-Description=ghlink hourly? no, 1-minute timer
+Description=ghlink hourly timer (v0.2.18: 探测 1 小时粒度)
 
 [Timer]
-OnCalendar=*-*-* *:*:00
-AccuracySec=5s
+OnCalendar=hourly
+AccuracySec=30s
 
 [Install]
 WantedBy=timers.target
@@ -568,10 +568,10 @@ WantedBy=timers.target
             return 2
         if not platform_adapter._run_cmd(["systemctl", "enable", "--now", "ghlink.timer"]):
             return 2
-        print("[ghlink] 已启用值守（systemd timer，1 分钟粒度）")
+        print("[ghlink] 已启用值守（systemd timer，1 小时粒度）")
         return 0
     # crontab 回退
-    line = f"* * * * * {_python_cmd()} {_config_path()} >> /var/log/ghlink.log 2>&1"
+    line = f"0 * * * * {_python_cmd()} {_config_path()} >> /var/log/ghlink.log 2>&1"
     crontab = platform_adapter._run_cmd_output(["crontab", "-l"]) or ""
     if line not in crontab:
         new = crontab.rstrip("\n") + "\n" + line + "\n"
@@ -581,7 +581,7 @@ WantedBy=timers.target
         if not platform_adapter._run_cmd(["crontab", tmp]):
             return 2
         os.unlink(tmp)
-    print("[ghlink] 已启用值守（crontab，1 分钟粒度）")
+    print("[ghlink] 已启用值守（crontab，1 小时粒度）")
     return 0
 
 
@@ -617,7 +617,7 @@ def _enable_macos() -> int:
         <string>{_python_cmd().strip(chr(34))}</string>
         <string>{_config_path()}</string>
     </array>
-    <key>StartInterval</key><integer>60</integer>
+    <key>StartInterval</key><integer>3600</integer>
     <key>RunAtLoad</key><true/>
     <key>StandardOutPath</key><string>/var/log/ghlink.log</string>
     <key>StandardErrorPath</key><string>/var/log/ghlink.log</string>
@@ -630,7 +630,7 @@ def _enable_macos() -> int:
         ["launchctl", "load", "/Library/LaunchDaemons/com.ghlink.plist"]
     ):
         return 2
-    print("[ghlink] 已启用值守（LaunchDaemon，1 分钟粒度）")
+    print("[ghlink] 已启用值守（LaunchDaemon，1 小时粒度）")
     return 0
 
 
@@ -662,9 +662,7 @@ def _enable_windows() -> int:
         "/TN",
         "ghlink",
         "/SC",
-        "MINUTE",
-        "/MO",
-        "1",
+        "HOURLY",
         "/TR",
         tr,
         "/RL",
@@ -675,7 +673,7 @@ def _enable_windows() -> int:
     ]
     if not platform_adapter._run_cmd(args):
         return 2
-    print("[ghlink] 已启用值守（schtasks，1 分钟粒度，最高权限）")
+    print("[ghlink] 已启用值守（schtasks，1 小时粒度，最高权限）")
     return 0
 
 
