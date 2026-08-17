@@ -381,6 +381,43 @@ def _build_menu():
     )
 
 
+def _detach_if_terminal() -> bool:
+    """⑤ 托盘 detach 常驻（v0.2.16，李工/赛博 20:33 批准）。
+
+    从终端手动启动托盘（ghlink tray）时，自动脱离终端会话独立常驻——
+    关闭终端窗口不影响托盘运行（否则终端关闭 → SIGHUP → 托盘退出）。
+    返回 True 表示已 detach（本进程应退出，托盘已在后台常驻）。
+    """
+    try:
+        if not sys.stdin.isatty():  # 非终端启动（自启动/双击）无需 detach
+            return False
+    except Exception:
+        return False
+    try:
+        import subprocess as _sp
+
+        # 构造重新拉起自己的命令（与入口一致）
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "tray"]
+        else:
+            cmd = [sys.executable, "-m", "ghlink.main", "tray"]
+        kwargs: dict = {
+            "stdin": _sp.DEVNULL,
+            "stdout": _sp.DEVNULL,
+            "stderr": _sp.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(_sp, "DETACHED_PROCESS", 0) | getattr(
+                _sp, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        else:
+            kwargs["start_new_session"] = True
+        _sp.Popen(cmd, **kwargs)
+        return True
+    except Exception:
+        return False
+
+
 def main() -> int:
     """托盘入口：ghlink tray。仅 Windows/macOS；Linux 提示纯 CLI。"""
     if sys.platform == "linux":
@@ -389,6 +426,15 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    # ⑤ 托盘 detach 常驻（v0.2.16）：从终端启动 → 脱离终端会话后台常驻
+    try:
+        if _detach_if_terminal():
+            print("[ghlink] 托盘已在后台常驻运行（已脱离终端）", file=sys.stderr)
+            return 0
+    except Exception:
+        pass
+
     if not HAS_TRAY:  # pragma: no cover
         print(
             "[ghlink] 缺少托盘依赖（pystray/Pillow）。"

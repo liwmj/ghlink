@@ -113,6 +113,68 @@ def test_hide_dock_icon_darwin_fallback(monkeypatch):
     tray._hide_dock_icon()  # 不应抛异常
 
 
+def test_detach_non_terminal(monkeypatch):
+    """非终端启动（自启动/双击）：不 detach，直接前台跑。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    assert tray._detach_if_terminal() is False
+
+
+def test_detach_terminal_posix(monkeypatch):
+    """POSIX 终端启动：detach 拉起后台进程，返回 True（本进程退出）。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return True
+
+    popen_calls = []
+
+    class _FakePopen:
+        def __init__(self, *a, **k):
+            popen_calls.append((a, k))
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    assert tray._detach_if_terminal() is True
+    assert popen_calls, "应拉起后台托盘进程"
+    args, kwargs = popen_calls[0]
+    assert args[0][-1] == "tray"  # 命令尾部是 tray 子命令
+    assert kwargs.get("start_new_session") is True  # POSIX 脱离会话
+    assert kwargs.get("stdin") is not None  # stdio 重定向
+
+
+def test_detach_terminal_windows(monkeypatch):
+    """Windows 终端启动：detach 用 DETACHED_PROCESS 拉起，返回 True。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return True
+
+    popen_calls = []
+
+    class _FakePopen:
+        def __init__(self, *a, **k):
+            popen_calls.append((a, k))
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "win32")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    monkeypatch.setattr("subprocess.DETACHED_PROCESS", 0x00000008, raising=False)
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    assert tray._detach_if_terminal() is True
+    assert popen_calls
+    args, kwargs = popen_calls[0]
+    assert kwargs.get("creationflags", 0) != 0  # DETACHED_PROCESS 标志
+
+
 def test_color_map():
     """状态 → 颜色映射齐全（四色定稿：红/黄/绿/蓝）。"""
     for s in ("normal", "idle", "verifying", "switching", "degraded"):
