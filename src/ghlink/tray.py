@@ -365,6 +365,18 @@ def main() -> int:
         )
         return 2
 
+    # ③ 单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程则提示退出
+    # macOS pgrep / Windows tasklist；排除自身进程（pgrep -f 可能匹配到当前命令行）
+    try:
+        if service._tray_alive():
+            print(
+                "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
+                file=sys.stderr,
+            )
+            return 0
+    except Exception:
+        pass
+
     st = _load_state()
     s = st.get("state", "normal")
     color = _COLOR.get(s, "#8E8E93")

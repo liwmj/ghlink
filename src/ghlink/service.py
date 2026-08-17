@@ -130,22 +130,23 @@ def status() -> int:
 
 
 def _watch_status_text() -> str:
-    """值守状态细分文本（双确认口径，2026-08-17 赛博复核）。
+    """值守状态细分文本（2026-08-17 李工新口径：值守独立于托盘）。
 
-    macOS/Windows 载体=托盘进程；Linux 载体=平台任务注册；次判据=心跳新鲜。
-    载体在+心跳新=已启用；载体在但心跳停=僵尸（异常）；载体不在=未启用。
+    主判据=平台任务注册；次判据=心跳新鲜。
+    注册+心跳新=已启用；注册但心跳停=僵尸（异常）；未注册=未启用。
+    托盘进程降为展示层，附「托盘: 运行中/未运行」辅助行。
     """
     try:
-        if sys.platform in ("win32", "darwin"):
-            carrier = _tray_alive()
-        else:
-            carrier = _is_registered()
+        registered = _is_registered()
         hb = _heartbeat_fresh()
-        if carrier and hb:
-            return "已启用（载体在 + 心跳正常）"
-        if carrier and not hb:
-            return "异常（载体在但心跳已停，疑似僵尸进程）"
-        return "未启用（运行 ghlink enable 或启动托盘开启）"
+        tray = _tray_alive()
+        if registered and hb:
+            base = "已启用（值守注册 + 心跳正常）"
+        elif registered and not hb:
+            base = "异常（值守已注册但心跳已停，疑似僵尸）"
+        else:
+            base = "未启用（运行 ghlink enable 开启值守）"
+        return f"{base}｜托盘: {'运行中' if tray else '未运行'}"
     except Exception:
         return "未知"
 
@@ -229,6 +230,10 @@ def _enable_autostart() -> bool:
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
+            # ③ 单实例（李工 09:49 反馈）：托盘已在跑则不重复拉起 LaunchAgent
+            if _tray_alive():
+                print("[ghlink] 托盘已在运行，自启动注册跳过拉起（避免多实例）")
+                return True
             # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
             exe = shutil.which("ghlink") or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
@@ -305,7 +310,7 @@ def _is_registered() -> bool:
 
 
 def _tray_alive() -> bool:
-    """值守载体（托盘进程）是否存活。macOS/Windows 托盘=总开关；Linux 纯 CLI 无托盘。"""
+    """托盘进程是否存活（展示层用）。macOS pgrep / Windows tasklist；Linux 无托盘。"""
     try:
         if sys.platform == "win32":
             out = platform_adapter._run_cmd_output(
@@ -338,19 +343,16 @@ def _heartbeat_fresh(max_age_sec: int = 180) -> bool:
 
 
 def _is_enabled() -> bool:
-    """值守是否真正在跑（双确认，2026-08-17 赛博复核口径）。
+    """值守是否真正在跑（2026-08-17 李工新口径：值守独立于托盘）。
 
-    - 主判据：值守载体存活（macOS/Windows 托盘进程；Linux 平台任务注册）
+    - 主判据：平台任务注册（enable 即值守，全平台统一）
     - 次判据：状态文件心跳新鲜（≤3 分钟）
-    - 载体在但心跳停 = 僵尸（异常，不算启用）
+    - 注册但心跳停 = 僵尸（异常，不算启用）
+    - 托盘进程降为展示层（托盘在但未注册=提示启动值守）
     """
     try:
-        if sys.platform in ("win32", "darwin"):
-            if not _tray_alive():
-                return False
-        else:
-            if not _is_registered():
-                return False
+        if not _is_registered():
+            return False
         return _heartbeat_fresh()
     except Exception:
         return False

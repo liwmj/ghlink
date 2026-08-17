@@ -162,64 +162,59 @@ class TestHeartbeatFresh:
 
 
 class TestIsEnabled:
-    """双确认：载体存活 + 心跳新鲜。"""
+    """值守判据（2026-08-17 李工新口径）：平台任务注册 + 心跳新鲜，全平台统一。"""
 
-    def test_macos_tray_alive_heartbeat_fresh(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: True)
-        monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
-        assert service._is_enabled() is True
-
-    def test_macos_zombie_tray_heartbeat_stale(self, monkeypatch):
-        """进程在但心跳停 = 僵尸，不算启用（防假阳性）。"""
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: True)
-        monkeypatch.setattr(service, "_heartbeat_fresh", lambda: False)
-        assert service._is_enabled() is False
-
-    def test_macos_tray_dead(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: False)
-        monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
-        assert service._is_enabled() is False
-
-    def test_windows_tray_alive_heartbeat_fresh(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "win32")
-        monkeypatch.setattr(service, "_tray_alive", lambda: True)
-        monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
-        assert service._is_enabled() is True
-
-    def test_linux_registered_heartbeat_fresh(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "linux")
+    def test_registered_heartbeat_fresh(self, monkeypatch):
         monkeypatch.setattr(service, "_is_registered", lambda: True)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
         assert service._is_enabled() is True
 
-    def test_linux_registered_heartbeat_stale(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "linux")
+    def test_registered_heartbeat_stale_zombie(self, monkeypatch):
+        """注册但心跳停 = 僵尸，不算启用（防假阳性）。"""
         monkeypatch.setattr(service, "_is_registered", lambda: True)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: False)
         assert service._is_enabled() is False
+
+    def test_not_registered(self, monkeypatch):
+        """未注册 = 未启用（不启动托盘也能值守，但没 enable 就不值守）。"""
+        monkeypatch.setattr(service, "_is_registered", lambda: False)
+        monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
+        assert service._is_enabled() is False
+
+    def test_all_platforms_unified(self, monkeypatch):
+        """全平台统一判据：不区分托盘进程（托盘=展示层）。"""
+        for plat in ("darwin", "win32", "linux"):
+            monkeypatch.setattr(service.sys, "platform", plat)
+            monkeypatch.setattr(service, "_is_registered", lambda: True)
+            monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
+            assert service._is_enabled() is True
 
 
 class TestWatchStatusText:
-    """status 值守状态细分文本（三态）。"""
+    """status 值守状态细分文本（三态 + 托盘辅助行，2026-08-17 李工新口径）。"""
 
     def test_enabled(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: True)
+        monkeypatch.setattr(service, "_is_registered", lambda: True)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: True)
-        assert "已启用" in service._watch_status_text()
+        monkeypatch.setattr(service, "_tray_alive", lambda: True)
+        text = service._watch_status_text()
+        assert "已启用" in text
+        assert "托盘: 运行中" in text
 
     def test_zombie(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: True)
+        """注册但心跳停 = 僵尸（异常）。"""
+        monkeypatch.setattr(service, "_is_registered", lambda: True)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: False)
-        assert "异常" in service._watch_status_text()
-        assert "僵尸" in service._watch_status_text()
+        monkeypatch.setattr(service, "_tray_alive", lambda: True)
+        text = service._watch_status_text()
+        assert "异常" in text
+        assert "僵尸" in text
 
     def test_disabled(self, monkeypatch):
-        monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service, "_tray_alive", lambda: False)
+        """未注册 = 未启用；托盘在但未注册 = 提示启动值守。"""
+        monkeypatch.setattr(service, "_is_registered", lambda: False)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: False)
-        assert "未启用" in service._watch_status_text()
+        monkeypatch.setattr(service, "_tray_alive", lambda: True)
+        text = service._watch_status_text()
+        assert "未启用" in text
+        assert "托盘: 运行中" in text
