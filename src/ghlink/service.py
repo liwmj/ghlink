@@ -12,6 +12,7 @@
 """
 
 import os
+import shutil
 import sys
 import time
 
@@ -19,7 +20,24 @@ from . import platform_adapter, state
 
 
 def _python_cmd() -> str:
-    """当前解释器路径 + ghlink 模块入口。"""
+    """值守执行入口：优先 wrapper（带 PYTHONPATH），回退裸 python -m。
+
+    2026-08-17 Bug A 修复（拂晓/顾笙双端实锤）：plist/systemd 裸调
+    sys.executable -m ghlink.main 无 PYTHONPATH → ModuleNotFoundError，
+    值守 enable 了等于没 enable。wrapper（/usr/local/bin/ghlink 或
+    /usr/bin/ghlink）自带 PYTHONPATH，必须优先使用。
+    """
+    # Windows frozen：windowed 入口静默跑（李工 13:34 定）
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        watch = os.path.join(exe_dir, "ghlink-watch.exe")
+        if os.path.exists(watch):
+            return f'"{watch}"'
+    # 优先 PATH 里的 wrapper（brew/deb 安装均落 bin）
+    for cand in (shutil.which("ghlink"), "/usr/local/bin/ghlink", "/usr/bin/ghlink"):
+        if cand and os.path.exists(cand):
+            return f'"{cand}"'
+    # 开发模式回退：裸 python -m（源码/venv 环境 PYTHONPATH 天然可用）
     py = sys.executable or "python3"
     return f'"{py}" -m ghlink.main'
 
@@ -68,6 +86,8 @@ def enable() -> int:
             file=sys.stderr,
         )
         return 2
+    # 2026-08-17 Bug B 修复：enable 前确保 config 落位（/etc/ghlink/config.json 不存在则复制）
+    _ensure_config()
     try:
         if sys.platform == "win32":
             return _enable_windows()
@@ -78,6 +98,41 @@ def enable() -> int:
     except Exception as exc:
         print(f"[ghlink] enable 失败: {exc}", file=sys.stderr)
         return 2
+
+
+def _ensure_config() -> None:
+    """确保配置文件存在：目标 _config_path()，缺失则从 config.example.json 复制。
+
+    2026-08-17 拂晓/顾笙双端实锤 Bug B：deb/brew 装完 /etc/ghlink/config.json
+    可能不存在（brew 不落配置、deb 路径不一致），LaunchDaemon/systemd 裸跑
+    直接读不到 → 值守僵尸。enable 前兜底复制，保证注册即能跑。
+    """
+    import shutil as _shutil
+
+    cfg_path = _config_path()
+    if os.path.exists(cfg_path):
+        return
+    # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share
+    candidates = [
+        os.path.join(os.getcwd(), "config.example.json"),
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config.example.json",
+        ),
+        "/usr/local/Cellar/ghlink/libexec/config.example.json",
+        "/usr/share/ghlink/config.example.json",
+        "/usr/lib/ghlink/config.example.json",
+    ]
+    for src in candidates:
+        if os.path.exists(src):
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+            _shutil.copy(src, cfg_path)
+            print(f"[ghlink] 已生成默认配置: {cfg_path}")
+            return
+    print(
+        f"[ghlink] 警告：找不到 config.example.json 模板，跳过配置落位（{cfg_path}）",
+        file=sys.stderr,
+    )
 
 
 def disable() -> int:
@@ -457,9 +512,7 @@ def _enable_macos() -> int:
     <key>Label</key><string>com.ghlink.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{sys.executable}</string>
-        <string>-m</string>
-        <string>ghlink.main</string>
+        <string>{_python_cmd().strip(chr(34))}</string>
         <string>{_config_path()}</string>
     </array>
     <key>StartInterval</key><integer>60</integer>
@@ -499,7 +552,8 @@ def _enable_windows() -> int:
         watch = os.path.join(exe_dir, "ghlink-watch.exe")
         tr = f'"{watch}" {_config_path()}'
     else:
-        tr = f"{sys.executable} -m ghlink.main {_config_path()}"
+        # 2026-08-17 Bug A 修复：非 frozen 也用 wrapper 入口（带 PYTHONPATH）
+        tr = f"{_python_cmd()} {_config_path()}"
     args = [
         "schtasks",
         "/Create",
