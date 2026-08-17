@@ -90,7 +90,13 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         # 2) 计数判定：成功清零，失败累加
         if ok:
             st["probe"]["consecutive_failures"] = 0
-            if st.get("state") in ("switching", "verifying"):
+            if st.get("state") == "degraded":
+                # Bug E（赛博定案）：降级来源（verify 失败回滚 / hosts 写失败 / 无候选）
+                # 探测成功即回绿，避免网络恢复后状态卡死永不回 normal
+                st["state"] = "normal"
+                st["verify_success"] = 0
+                st["last_error"] = None
+            elif st.get("state") in ("switching", "verifying"):
                 # P0-3: 切换后需连续 verify_rounds 轮成功才恢复 normal
                 st["verify_success"] = st.get("verify_success", 0) + 1
                 if st["verify_success"] >= verify_rounds:
@@ -154,8 +160,14 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             state.save(st_path, st)
             return 1
 
+        # Bug E 点3（赛博定案）：verify 只验证核心域名 ∩ 写入域名——
+        # fastly 等非核心域名即使写入 hosts 也不参与 verify（它本身不可达，
+        # 参与会误判回滚；应走健康度降级剔除，不拖累整体切换）
+        probe_cfg = cfg.get("probe", {})
+        core_targets = set(probe_cfg.get("core_targets", ["github.com", "api.github.com"]))
+        verify_targets = [t for t in entries if t in core_targets] or list(entries.keys())
         st["state"] = "verifying"
-        if not hosts_manager.verify_after_apply(active, timeout):
+        if not hosts_manager.verify_after_apply(verify_targets, timeout):
             # P0-1: 自检失败 → 立即回滚 + degraded（坏配置绝不留场）
             hosts_manager.rollback(backup_path)
             st["state"] = "degraded"
