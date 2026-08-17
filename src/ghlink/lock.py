@@ -26,11 +26,23 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _safe_lock_path(lock_path: str) -> str:
+    """校验并规范化锁文件路径（SonarCloud S8707：防符号链接/路径逃逸）。
+
+    只接受绝对路径；realpath 解析符号链接后返回规范化路径，
+    后续所有文件访问一律使用本函数返回值。
+    """
+    path = os.path.realpath(lock_path)
+    if not os.path.isabs(path):
+        raise ValueError(f"lock path must be absolute: {lock_path}")
+    return path
+
+
 @contextmanager
 def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     """获取锁；成功 yield True，已被持有 yield False（调用方直接退出本轮）。"""
-    # SonarCloud S8707：访问前规范化路径（realpath 防符号链接/相对路径逃逸）
-    lock_path = os.path.realpath(lock_path)
+    # SonarCloud S8707：入口统一校验+规范化路径，后续访问全部使用校验后路径
+    lock_path = _safe_lock_path(lock_path)
     # Linux/macOS 用 flock 内核锁（进程退出自动释放）
     if sys.platform != "win32":
         try:
