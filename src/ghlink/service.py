@@ -50,7 +50,27 @@ def _install_prefix() -> str:
 
 
 def _config_path() -> str:
-    return os.path.join(_install_prefix(), "config.json")
+    """配置文件路径：优先用户/系统默认位置，普通用户回退读系统级配置。
+
+    2026-08-17 Bug D（赛博定案）：_install_prefix() 按 euid 分叉，普通用户
+    只找 ~/.ghlink/config.json（通常不存在）→ _state_path() 退化到用户目录
+    相对路径，读不到 /var/lib/ghlink/ 的绝对路径状态文件 → 心跳恒判不新鲜
+    → 误报「值守: 异常（僵尸）」。修复：非 root 且用户 config 不存在时，
+    按可读性回退系统级 config（/usr/local/etc/ghlink → /etc/ghlink），
+    让普通用户 status/tray 能拿到绝对路径 state_file（Bug C 的 chmod 0644
+    在此链路下才能真正闭环）。
+    """
+    primary = os.path.join(_install_prefix(), "config.json")
+    if os.path.exists(primary):
+        return primary
+    if os.name == "posix" and os.geteuid() != 0:
+        for cand in (
+            "/usr/local/etc/ghlink/config.json",
+            "/etc/ghlink/config.json",
+        ):
+            if os.path.exists(cand) and os.access(cand, os.R_OK):
+                return cand
+    return primary
 
 
 def _service_name() -> str:
@@ -111,33 +131,43 @@ def _ensure_config() -> None:
     2026-08-17 拂晓/顾笙双端实锤 Bug B：deb/brew 装完 /etc/ghlink/config.json
     可能不存在（brew 不落配置、deb 路径不一致），LaunchDaemon/systemd 裸跑
     直接读不到 → 值守僵尸。enable 前兜底复制，保证注册即能跑。
+    2026-08-17 Bug D（赛博定案）：复制后 chmod 0644 + 目录 0755，
+    让普通用户 status/tray 可读系统级 config（配合 _config_path() fallback），
+    Bug C 的 0644 状态文件才能真正闭环。
     """
     import shutil as _shutil
 
     cfg_path = _config_path()
+    if not os.path.exists(cfg_path):
+        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share
+        candidates = [
+            os.path.join(os.getcwd(), "config.example.json"),
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "config.example.json",
+            ),
+            "/usr/local/Cellar/ghlink/libexec/config.example.json",
+            "/usr/share/ghlink/config.example.json",
+            "/usr/lib/ghlink/config.example.json",
+        ]
+        for src in candidates:
+            if os.path.exists(src):
+                os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+                _shutil.copy(src, cfg_path)
+                print(f"[ghlink] 已生成默认配置: {cfg_path}")
+                break
+        else:
+            print(
+                f"[ghlink] 警告：找不到 config.example.json 模板，跳过配置落位（{cfg_path}）",
+                file=sys.stderr,
+            )
+    # Bug D：配置与目录权限对普通用户可读（enable 以 root 跑，落位后放开读权限）
     if os.path.exists(cfg_path):
-        return
-    # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share
-    candidates = [
-        os.path.join(os.getcwd(), "config.example.json"),
-        os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "config.example.json",
-        ),
-        "/usr/local/Cellar/ghlink/libexec/config.example.json",
-        "/usr/share/ghlink/config.example.json",
-        "/usr/lib/ghlink/config.example.json",
-    ]
-    for src in candidates:
-        if os.path.exists(src):
-            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
-            _shutil.copy(src, cfg_path)
-            print(f"[ghlink] 已生成默认配置: {cfg_path}")
-            return
-    print(
-        f"[ghlink] 警告：找不到 config.example.json 模板，跳过配置落位（{cfg_path}）",
-        file=sys.stderr,
-    )
+        try:
+            os.chmod(cfg_path, 0o644)  # NOSONAR
+            os.chmod(os.path.dirname(cfg_path), 0o755)  # NOSONAR
+        except OSError:
+            pass
 
 
 def disable() -> int:
