@@ -16,7 +16,11 @@ class TestIsRegistered:
 
     def test_macos_plist_exists(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service.os.path, "exists", lambda p: p == "/Library/LaunchDaemons/com.ghlink.plist")
+        monkeypatch.setattr(
+            service.os.path,
+            "exists",
+            lambda p: p == "/Library/LaunchDaemons/com.ghlink.plist",
+        )
         assert service._is_registered() is True
 
     def test_macos_plist_missing(self, monkeypatch):
@@ -27,7 +31,8 @@ class TestIsRegistered:
     def test_linux_systemd_timer(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "linux")
         monkeypatch.setattr(
-            service.os.path, "exists",
+            service.os.path,
+            "exists",
             lambda p: p == "/etc/systemd/system/ghlink.timer",
         )
         assert service._is_registered() is True
@@ -36,7 +41,9 @@ class TestIsRegistered:
         monkeypatch.setattr(service.sys, "platform", "linux")
         monkeypatch.setattr(service.os.path, "exists", lambda p: False)
         monkeypatch.setattr(
-            service.platform_adapter, "_run_cmd_output", lambda args: "* * * * * /usr/bin/python3 -m ghlink.main /etc/ghlink/config.json"
+            service.platform_adapter,
+            "_run_cmd_output",
+            lambda args: "* * * * * /usr/bin/python3 -m ghlink.main /etc/ghlink/config.json",
         )
         assert service._is_registered() is True
 
@@ -52,7 +59,8 @@ class TestTrayAlive:
     def test_macos_tray_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "darwin")
         monkeypatch.setattr(
-            service.platform_adapter, "_run_cmd_output",
+            service.platform_adapter,
+            "_run_cmd_output",
             lambda args: "12345\n",
         )
         assert service._tray_alive() is True
@@ -60,7 +68,8 @@ class TestTrayAlive:
     def test_macos_tray_not_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "darwin")
         monkeypatch.setattr(
-            service.platform_adapter, "_run_cmd_output",
+            service.platform_adapter,
+            "_run_cmd_output",
             lambda args: "",
         )
         assert service._tray_alive() is False
@@ -68,7 +77,8 @@ class TestTrayAlive:
     def test_windows_tray_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "win32")
         monkeypatch.setattr(
-            service.platform_adapter, "_run_cmd_output",
+            service.platform_adapter,
+            "_run_cmd_output",
             lambda args: "ghlink-tray.exe 1234 Console 1 8,000 K",
         )
         assert service._tray_alive() is True
@@ -76,7 +86,8 @@ class TestTrayAlive:
     def test_windows_tray_not_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "win32")
         monkeypatch.setattr(
-            service.platform_adapter, "_run_cmd_output",
+            service.platform_adapter,
+            "_run_cmd_output",
             lambda args: "信息: 没有运行的任务匹配指定标准。",
         )
         assert service._tray_alive() is False
@@ -126,14 +137,10 @@ class TestHeartbeatFresh:
         """
         # config.json 带 state_file 指向状态文件
         cfg = tmp_path / "config.json"
-        cfg.write_text(
-            json.dumps({"state_file": str(tmp_path / "state.json")}), encoding="utf-8"
-        )
+        cfg.write_text(json.dumps({"state_file": str(tmp_path / "state.json")}), encoding="utf-8")
         # 真实状态文件，timestamp 新鲜
         ts = time.strftime("%Y-%m-%dT%H:%M:%S")
-        (tmp_path / "state.json").write_text(
-            json.dumps({"timestamp": ts}), encoding="utf-8"
-        )
+        (tmp_path / "state.json").write_text(json.dumps({"timestamp": ts}), encoding="utf-8")
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(service, "_config_path", lambda: str(cfg))
         try:
