@@ -54,7 +54,8 @@ def save(path: str, state: Dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-        # NOSONAR:S2612 状态文件需普通用户可读（0644 仅读，非 world-writable）
+        # NOSONAR:S2612
+        # 状态文件需普通用户可读（0644 仅读，非 world-writable）
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except OSError:
