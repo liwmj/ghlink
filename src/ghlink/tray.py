@@ -93,13 +93,42 @@ def _load_state() -> Dict[str, Any]:
     return state.load(p) if os.path.exists(p) else {}
 
 
+def _hide_dock_icon() -> None:
+    """macOS：隐藏 Dock 图标（LSUIElement 等效，托盘常驻不占 Dock）。
+
+    2026-08-17 v0.2.16（李工 18:43 反馈）：托盘用 python 进程跑，
+    Dock 一直显示 Python 图标。用 Objective-C runtime 设置
+    NSApplicationActivationPolicyAccessory（=1）隐藏 Dock，零依赖
+    （不引 pyobjc，ctypes 直接调 objc runtime）。
+    """
+    if sys.platform != "darwin":  # pragma: no cover - 仅 macOS
+        return
+    try:  # pragma: no cover - 依赖 macOS 运行时
+        import ctypes
+        import ctypes.util
+
+        objc_lib = ctypes.util.find_library("objc")
+        if not objc_lib:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_lib)
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.objc_msgSend.restype = ctypes.c_void_p
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        cls = objc.objc_getClass(b"NSApplication")
+        sel = objc.sel_registerName(b"sharedApplication")
+        app = objc.objc_msgSend(cls, sel)
+        # setActivationPolicy: 0=Regular(显示Dock) 1=Accessory(隐藏Dock) 2=Prohibited
+        objc.objc_msgSend(app, objc.sel_registerName(b"setActivationPolicy:"), ctypes.c_int(1))
+    except Exception:
+        pass  # 隐藏失败不阻塞托盘（仅 Dock 图标可见性）
+
+
 def _status_text() -> str:
     st = _load_state()
     s = st.get("state", "normal")
-    watching = service._is_enabled()
     txt = _TEXT.get(s, s)
-    watch = "值守已启用" if watching else "值守未启用"
-    return f"状态: {txt} ｜ {watch}"
+    return f"状态: {txt} ｜ {service._watch_status_text()}"
 
 
 def _make_icon(color: str, size: int = 64):
@@ -191,7 +220,10 @@ def _run_privileged(subcmd: str) -> bool:
             return ret > 32
         import subprocess
 
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        kwargs: dict = {}
+        if sys.platform == "win32":  # v0.2.16：提权已具备时不弹命令窗
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **kwargs)
         return r.returncode == 0
     except Exception:
         return False
@@ -349,6 +381,43 @@ def _build_menu():
     )
 
 
+def _detach_if_terminal() -> bool:
+    """⑤ 托盘 detach 常驻（v0.2.16，李工/赛博 20:33 批准）。
+
+    从终端手动启动托盘（ghlink tray）时，自动脱离终端会话独立常驻——
+    关闭终端窗口不影响托盘运行（否则终端关闭 → SIGHUP → 托盘退出）。
+    返回 True 表示已 detach（本进程应退出，托盘已在后台常驻）。
+    """
+    try:
+        if not sys.stdin.isatty():  # 非终端启动（自启动/双击）无需 detach
+            return False
+    except Exception:
+        return False
+    try:
+        import subprocess as _sp
+
+        # 构造重新拉起自己的命令（与入口一致）
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "tray"]
+        else:
+            cmd = [sys.executable, "-m", "ghlink.main", "tray"]
+        kwargs: dict = {
+            "stdin": _sp.DEVNULL,
+            "stdout": _sp.DEVNULL,
+            "stderr": _sp.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(_sp, "DETACHED_PROCESS", 0) | getattr(
+                _sp, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        else:
+            kwargs["start_new_session"] = True
+        _sp.Popen(cmd, **kwargs)
+        return True
+    except Exception:
+        return False
+
+
 def main() -> int:
     """托盘入口：ghlink tray。仅 Windows/macOS；Linux 提示纯 CLI。"""
     if sys.platform == "linux":
@@ -357,6 +426,15 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    # ⑤ 托盘 detach 常驻（v0.2.16）：从终端启动 → 脱离终端会话后台常驻
+    try:
+        if _detach_if_terminal():
+            print("[ghlink] 托盘已在后台常驻运行（已脱离终端）", file=sys.stderr)
+            return 0
+    except Exception:
+        pass
+
     if not HAS_TRAY:  # pragma: no cover
         print(
             "[ghlink] 缺少托盘依赖（pystray/Pillow）。"
@@ -379,6 +457,9 @@ def main() -> int:
             return 0
     except Exception:
         pass
+
+    # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
+    _hide_dock_icon()
 
     st = _load_state()
     s = st.get("state", "normal")

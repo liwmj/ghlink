@@ -71,14 +71,108 @@ def test_tray_no_instance_starts(monkeypatch):
 
 
 def test_status_text(tmp_path, monkeypatch):
-    """状态文本拼接：状态 + 值守。"""
+    """状态文本拼接：状态 + 值守（v0.2.16：统一走 _watch_status_text 新判据）。"""
     st_file = tmp_path / "state.json"
     st_file.write_text(json.dumps({"state": "degraded"}), encoding="utf-8")
     monkeypatch.setattr(tray, "_state_path", lambda: str(st_file))
-    monkeypatch.setattr(tray.service, "_is_enabled", lambda: False)
+    monkeypatch.setattr(
+        tray.service, "_watch_status_text", lambda: "已启用（值守注册 + 心跳正常）｜托盘: 运行中"
+    )
     text = tray._status_text()
     assert "降级" in text
-    assert "值守未启用" in text
+    assert (
+        "已启用（值守注册 + 心跳正常）" in text
+    )  # 新判据（平台注册+心跳），不再是旧的“值守未启用”
+
+
+def test_status_text_unregistered(tmp_path, monkeypatch):
+    """未注册值守 → 托盘文本显示未启用（新判据透传）。"""
+    st_file = tmp_path / "state.json"
+    st_file.write_text(json.dumps({"state": "normal"}), encoding="utf-8")
+    monkeypatch.setattr(tray, "_state_path", lambda: str(st_file))
+    monkeypatch.setattr(
+        tray.service,
+        "_watch_status_text",
+        lambda: "未启用（运行 ghlink enable 开启值守）｜托盘: 运行中",
+    )
+    text = tray._status_text()
+    assert "正常" in text
+    assert "未启用（运行 ghlink enable 开启值守）" in text
+
+
+def test_hide_dock_icon_non_darwin(monkeypatch):
+    """非 macOS：_hide_dock_icon 直接返回不抛错。"""
+    monkeypatch.setattr(tray.sys, "platform", "win32")
+    tray._hide_dock_icon()  # 不应抛异常
+
+
+def test_hide_dock_icon_darwin_fallback(monkeypatch):
+    """macOS 无 objc 库（异常环境）：_hide_dock_icon 静默降级不阻塞托盘。"""
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr("ctypes.util.find_library", lambda name: None)
+    tray._hide_dock_icon()  # 不应抛异常
+
+
+def test_detach_non_terminal(monkeypatch):
+    """非终端启动（自启动/双击）：不 detach，直接前台跑。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    assert tray._detach_if_terminal() is False
+
+
+def test_detach_terminal_posix(monkeypatch):
+    """POSIX 终端启动：detach 拉起后台进程，返回 True（本进程退出）。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return True
+
+    popen_calls = []
+
+    class _FakePopen:
+        def __init__(self, *a, **k):
+            popen_calls.append((a, k))
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    assert tray._detach_if_terminal() is True
+    assert popen_calls, "应拉起后台托盘进程"
+    args, kwargs = popen_calls[0]
+    assert args[0][-1] == "tray"  # 命令尾部是 tray 子命令
+    assert kwargs.get("start_new_session") is True  # POSIX 脱离会话
+    assert kwargs.get("stdin") is not None  # stdio 重定向
+
+
+def test_detach_terminal_windows(monkeypatch):
+    """Windows 终端启动：detach 用 DETACHED_PROCESS 拉起，返回 True。"""
+
+    class _FakeStdin:
+        def isatty(self):
+            return True
+
+    popen_calls = []
+
+    class _FakePopen:
+        def __init__(self, *a, **k):
+            popen_calls.append((a, k))
+
+    monkeypatch.setattr(tray.sys, "stdin", _FakeStdin())
+    monkeypatch.setattr(tray.sys, "platform", "win32")
+    monkeypatch.setattr(tray.sys, "frozen", False, raising=False)
+    monkeypatch.setattr("subprocess.DETACHED_PROCESS", 0x00000008, raising=False)
+    monkeypatch.setattr("subprocess.Popen", _FakePopen)
+    assert tray._detach_if_terminal() is True
+    assert popen_calls
+    args, kwargs = popen_calls[0]
+    assert kwargs.get("creationflags", 0) != 0  # DETACHED_PROCESS 标志
 
 
 def test_color_map():
