@@ -27,7 +27,7 @@ def test_tray_single_instance_guard(monkeypatch):
     """单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程 → 返回 0 不重复拉起。"""
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "darwin")
-    monkeypatch.setattr(tray.service, "_tray_alive", lambda: True)
+    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: True)
     assert tray.main() == 0
 
 
@@ -35,7 +35,36 @@ def test_tray_single_instance_guard_windows(monkeypatch):
     """Windows 单实例锁同样生效。"""
     monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.sys, "platform", "win32")
-    monkeypatch.setattr(tray.service, "_tray_alive", lambda: True)
+    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: True)
+    assert tray.main() == 0
+
+
+def test_tray_no_instance_starts(monkeypatch):
+    """无已有实例（pgrep 只匹配到自身，排除后无实例）→ 正常继续启动，不被自己挡住。
+
+    赛博 09:56 问题 B：单实例锁必须排除自身 PID，否则首次 ghlink tray 会被自己拦截。
+    """
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.service, "_tray_alive", lambda exclude_pid=0: False)
+
+    class _FakeIcon:
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(tray.pystray, "Icon", _FakeIcon)
+    monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
+    monkeypatch.setattr(tray, "_status_text", lambda: "")
+    monkeypatch.setattr(tray, "_build_menu", lambda: None)
+    monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)  # 跳过自动 enable
+    # 无实例时不提前退出：main() 应走到 icon.run()（FakeIcon 直接返回）后返回 0
     assert tray.main() == 0
 
 

@@ -54,7 +54,7 @@ class TestIsRegistered:
 
 
 class TestTrayAlive:
-    """值守载体（托盘进程）存活检测。"""
+    """值守载体（托盘进程）存活检测（含 exclude_pid 排除自身，赛博 09:56 问题 B）。"""
 
     def test_macos_tray_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "darwin")
@@ -74,12 +74,32 @@ class TestTrayAlive:
         )
         assert service._tray_alive() is False
 
+    def test_macos_exclude_self_only(self, monkeypatch):
+        """pgrep 只匹配到自身 PID → 排除后无实例（首次启动不被自己挡住）。"""
+        monkeypatch.setattr(service.sys, "platform", "darwin")
+        monkeypatch.setattr(
+            service.platform_adapter,
+            "_run_cmd_output",
+            lambda args: "99999\n",  # 99999 = 自身 PID
+        )
+        assert service._tray_alive(exclude_pid=99999) is False
+
+    def test_macos_exclude_self_with_other(self, monkeypatch):
+        """除自身外还有旧实例 → 排除后仍有实例（单实例锁应拦截）。"""
+        monkeypatch.setattr(service.sys, "platform", "darwin")
+        monkeypatch.setattr(
+            service.platform_adapter,
+            "_run_cmd_output",
+            lambda args: "99999\n12345\n",  # 99999=自身, 12345=旧实例
+        )
+        assert service._tray_alive(exclude_pid=99999) is True
+
     def test_windows_tray_running(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "win32")
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
-            lambda args: "ghlink-tray.exe 1234 Console 1 8,000 K",
+            lambda args: '"ghlink-tray.exe","1234","Console","1","8,000 K"',
         )
         assert service._tray_alive() is True
 
@@ -91,6 +111,16 @@ class TestTrayAlive:
             lambda args: "信息: 没有运行的任务匹配指定标准。",
         )
         assert service._tray_alive() is False
+
+    def test_windows_exclude_self_only(self, monkeypatch):
+        """tasklist CSV 只含自身 PID → 排除后无实例。"""
+        monkeypatch.setattr(service.sys, "platform", "win32")
+        monkeypatch.setattr(
+            service.platform_adapter,
+            "_run_cmd_output",
+            lambda args: '"ghlink-tray.exe","99999","Console","1","8,000 K"',
+        )
+        assert service._tray_alive(exclude_pid=99999) is False
 
     def test_linux_no_tray(self, monkeypatch):
         monkeypatch.setattr(service.sys, "platform", "linux")
