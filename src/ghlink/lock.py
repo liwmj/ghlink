@@ -29,13 +29,23 @@ def _pid_alive(pid: int) -> bool:
 def _safe_lock_path(lock_path: str) -> str:
     """校验并规范化锁文件路径（SonarCloud S8707：防符号链接/路径逃逸）。
 
-    只接受绝对路径；realpath 解析符号链接后返回规范化路径，
-    后续所有文件访问一律使用本函数返回值。
+    要求：绝对路径 + realpath 解析符号链接 + 路径必须位于允许目录
+    （/var/lib/ghlink、/tmp、/var/tmp 或用户主目录）内。
     """
-    path = os.path.realpath(lock_path)
-    if not os.path.isabs(path):
+    resolved = os.path.realpath(lock_path)
+    if not os.path.isabs(resolved):
         raise ValueError(f"lock path must be absolute: {lock_path}")
-    return path
+    allowed_roots = (
+        "/var/lib/ghlink",
+        "/tmp",
+        "/var/tmp",
+        os.path.expanduser("~"),
+    )
+    for root in allowed_roots:
+        root = os.path.realpath(root)
+        if resolved == root or resolved.startswith(root + os.sep):
+            return resolved
+    raise ValueError(f"lock path outside allowed dirs: {resolved}")
 
 
 @contextmanager
