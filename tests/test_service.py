@@ -233,7 +233,7 @@ class TestResolveRel:
 
 
 class TestHeartbeatFresh:
-    """状态文件心跳新鲜度（探测 1 分钟粒度，3 分钟宽限）。"""
+    """状态文件心跳新鲜度（探测 1 小时粒度，v0.2.18 宽限 90 分钟）。"""
 
     def _write_state(self, tmp_path, ts):
         p = tmp_path / "ghlink_status.json"
@@ -248,8 +248,18 @@ class TestHeartbeatFresh:
         monkeypatch.setattr(service.state, "load", lambda p: {"timestamp": ts})
         assert service._heartbeat_fresh() is True
 
+    def test_fresh_within_90min(self, tmp_path, monkeypatch):
+        """v0.2.18：1h 探测粒度下，1 小时前的时间戳仍算新鲜。"""
+        old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 3600))
+        st_path = self._write_state(tmp_path, old)
+        monkeypatch.setattr(service, "_config_path", lambda: "")
+        monkeypatch.setattr(service.os.path, "exists", lambda p: p == st_path)
+        monkeypatch.setattr(service.state, "load", lambda p: {"timestamp": old})
+        assert service._heartbeat_fresh() is True
+
     def test_stale(self, tmp_path, monkeypatch):
-        old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 600))
+        # 超过 90 分钟宽限（5400s）才判 stale（v0.2.18：max_age 180→5400）
+        old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 7200))
         st_path = self._write_state(tmp_path, old)
         monkeypatch.setattr(service, "_config_path", lambda: "")
         monkeypatch.setattr(service.os.path, "exists", lambda p: p == st_path)

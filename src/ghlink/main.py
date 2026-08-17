@@ -87,6 +87,21 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             st["probe"]["targets"].setdefault(h, {})["ok"] = bool(r.get("ok"))
         ok = probe.round_ok({h: r for h, r in results.items() if h in active})
 
+        # v0.2.18（李工 23:21 并入 v0.2.19 规划）：GitHub520 hosts 段同步——
+        # 非核心域名用社区 IP 合入段落（核心域名仍由 ghlink 自愈动态兜底）；
+        # 无论探测结果如何都尝试同步（独立段落，不阻塞自愈主流程）
+        github520_entries: Dict[str, list] = {}
+        try:
+            from . import github520 as g520
+
+            st_dir = os.path.dirname(os.path.abspath(st_path)) if st_path else ""
+            github520_entries = g520.sync_github520(cfg, st_dir)
+            if github520_entries:
+                st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                st["github520"]["domains"] = len(github520_entries)
+        except Exception:
+            pass
+
         # 2) 计数判定：成功清零，失败累加
         if ok:
             st["probe"]["consecutive_failures"] = 0
@@ -150,6 +165,13 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             return 1
 
         block = hosts_manager.build_block(entries)
+        # v0.2.18：GitHub520 非核心域名合入同一段落（核心域名 entries 已覆盖，
+        # 社区 IP 只补非核心盲区；两者不冲突——ghlink 条目优先）
+        merged_entries = dict(entries)
+        for d, ips in github520_entries.items():
+            merged_entries.setdefault(d, ips)
+        if merged_entries != entries:
+            block = hosts_manager.build_block(merged_entries)
         ok_apply, backup_path = hosts_manager.apply_block(block, _backup_dir(cfg, config_path))
         if not ok_apply:
             st["state"] = "degraded"
