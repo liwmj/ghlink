@@ -54,8 +54,8 @@ def save(path: str, state: Dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-        # 有意设计：root 值守进程写入后普通用户 CLI 需可读状态文件（0644 仅读不可写）
-        os.chmod(tmp, 0o644)  # NOSONAR:S2612
+        # NOSONAR:S2612 状态文件需普通用户可读（0644 仅读，非 world-writable）
+        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except OSError:
         try:
