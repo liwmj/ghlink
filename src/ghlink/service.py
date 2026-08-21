@@ -236,7 +236,10 @@ def _migrate_legacy_paths() -> None:
         with open(cfg_path, "w", encoding="utf-8") as f:
             _json.dump(cfg, f, ensure_ascii=False, indent=2)
         for key, old_val in fixed.items():
-            print(f"[ghlink] 升级迁移：{key} 旧值 {old_val} 在当前平台无效，已改为 {cfg[key]}（旧配置备份 {bak}）")
+            print(
+                f"[ghlink] 升级迁移：{key} 旧值 {old_val} 在当前平台无效，"
+                f"已改为 {cfg[key]}（旧配置备份 {bak}）"
+            )
     except Exception as exc:
         print(f"[ghlink] 升级迁移跳过：{exc}", file=sys.stderr)
 
