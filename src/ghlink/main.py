@@ -349,12 +349,16 @@ def main() -> None:
             from . import tray
 
             sys.exit(tray.main())
-        # 非打包/其他平台：兼容旧用法，当作 config 路径单轮运行
-        sys.exit(run(DEFAULT_CONFIG_FILE))
+        # 非打包/其他平台：默认用系统/用户 config（与 enable/status 同源）
+        # v0.2.19.2（赛博 Windows 严格测试 P3）：原 DEFAULT_CONFIG_FILE 是 cwd
+        # 相对路径，手动 run 与值守状态不同源 → 用户看到矛盾结果
+        sys.exit(run(service._config_path()))
 
     first = args[0]
     if first in ("run",):
-        cfg = args[1] if len(args) > 1 else DEFAULT_CONFIG_FILE
+        # v0.2.19.2（赛博 Windows 严格测试 P3）：无参数 run 默认用
+        # _config_path()（与 enable/status 同源），不再用 cwd 相对 config.json
+        cfg = args[1] if len(args) > 1 else service._config_path()
         sys.exit(run(cfg))
     if first == "enable":
         sys.exit(service.enable())
