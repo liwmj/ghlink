@@ -1,0 +1,49 @@
+name: Win enable debug (v0.2.19 ⑧)
+
+on:
+  push:
+    branches: [fix/v0.2.19-eight]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  enable-debug:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build exe (PyInstaller)
+        run: |
+          pip install pyinstaller pystray Pillow
+          pyinstaller packaging/windows/ghlink.spec --distpath dist/windows --workpath build/windows
+      - name: ghlink --version
+        shell: pwsh
+        run: |
+          .\dist\windows\ghlink.exe --version
+          Write-Host "version exit: $LASTEXITCODE"
+      - name: ghlink enable (抓真实报错)
+        shell: pwsh
+        run: |
+          # 前置：确保 config 落位（enable 会自动 _ensure_config，但显式验证）
+          Write-Host "=== whoami ==="; whoami
+          Write-Host "=== enable ==="
+          .\dist\windows\ghlink.exe enable
+          Write-Host "enable exit: $LASTEXITCODE"
+          Write-Host "=== schtasks /Query ==="
+          schtasks /Query /TN ghlink
+          Write-Host "schtasks query exit: $LASTEXITCODE"
+          Write-Host "=== ghlink status ==="
+          .\dist\windows\ghlink.exe status
+      - name: cleanup disable
+        shell: pwsh
+        run: |
+          .\dist\windows\ghlink.exe disable
+          Write-Host "disable exit: $LASTEXITCODE"
+          schtasks /Query /TN ghlink *> $null
+          Write-Host "schtasks removed check exit: $LASTEXITCODE"
