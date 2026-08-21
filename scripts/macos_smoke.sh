@@ -90,7 +90,10 @@ before=$(shasum "$HOSTS" | cut -d' ' -f1)
 $RUN >/dev/null 2>&1; rc=$?
 after=$(shasum "$HOSTS" | cut -d' ' -f1)
 [ "$rc" -eq 0 ] && ok "① 正常路径 EXIT 0" || bad "① 正常路径 EXIT=$rc"
-[ "$before" = "$after" ] && ok "① hosts 零改动" || bad "① hosts 被改动"
+# v0.2.19（李工 8 条③）：正常态也写 hosts 段（保证全局访问生效），
+# 不再「零改动」；断言改为 ghlink 段落已写入 + 无 127.0.0.1 坏 IP
+grep -q "ghlink Start" "$HOSTS" && ok "① hosts 含 ghlink 段（v0.2.19 常态写入）" || bad "① hosts 缺 ghlink 段"
+! grep -q "^127.0.0.1 github.com" "$HOSTS" && ok "① hosts 无坏 IP" || bad "① hosts 残留坏 IP"
 
 # ② 切换链路：注入 127.0.0.1 → 连续失败 3 轮 → 切换写入真实 IP → 自检通过
 # 宽容分支：CI runner 网络受限（DoH 全部拿不到候选）时 degraded 是正确降级行为，不算失败（真机切换验证另挂）
@@ -170,7 +173,13 @@ for i in 1 2 3; do
   $RUN_COOL >/dev/null 2>&1
 done
 h2=$(python3 -c "import json;print(len(json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
-[ "$h2" -le 1 ] && ok "⑤ 冷却期不重复切换 (history=$h2)" || bad "⑤ 冷却期内重复切换 (history=$h2)"
+# v0.2.19：常态刷新（periodic refresh）也会进 history，冷却期只防
+# 「consecutive failures 切换」重复触发——按 trigger 类型断言
+trig=$(python3 -c "import json;print(','.join(h.get('trigger','') for h in json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
+case "$trig" in
+  *"consecutive failures"*) bad "⑤ 冷却期内触发切换 ($trig)" ;;
+  *) ok "⑤ 冷却期无故障切换 (history=$h2, triggers=$trig)" ;;
+esac
 
 # 收尾：恢复基线并核对
 restore_hosts
