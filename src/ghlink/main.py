@@ -36,9 +36,7 @@ def _config_base(config_path: str) -> str:
     if config_path and config_path != DEFAULT_CONFIG_FILE:
         return os.path.dirname(os.path.abspath(config_path))
     if sys.platform == "win32":
-        return os.path.join(
-            os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink"
-        )
+        return os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink")
     if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
         return "/etc/ghlink"
     return os.path.join(os.path.expanduser("~"), ".ghlink")
@@ -267,9 +265,7 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                 }
             )
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
-                notifier.send(
-                    f"[ghlink] 已更新 hosts IP {first_ip}（触发：{trigger}）", webhook
-                )
+                notifier.send(f"[ghlink] 已更新 hosts IP {first_ip}（触发：{trigger}）", webhook)
                 notifier.mark_alerted(st)
         state.save(st_path, st)
         return 0
