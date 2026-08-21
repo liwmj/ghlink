@@ -599,10 +599,11 @@ WantedBy=timers.target
         if not platform_adapter._run_cmd(["systemctl", "enable", "--now", "ghlink.timer"]):
             return 2
         # v0.2.19：注册完立即跑第一轮（不等 OnCalendar 整点）
-        if platform_adapter._run_cmd(["systemctl", "start", "ghlink.service"]):
-            print("[ghlink] 已启用值守并立即执行第一轮（systemd timer，1 小时粒度）")
-        else:
-            print("[ghlink] 已启用值守（systemd timer，1 小时粒度）；首轮手动启动失败，将等整点")
+        # v0.2.19.1（拂晓 Linux 严格测试 #1）：--no-block 异步触发——
+        # oneshot 同步等待在 degraded 环境单轮 2-3 分钟且 exit 1 会导致
+        # start 报失败误导用户；注册成功即成功，首轮异步跑
+        platform_adapter._run_cmd(["systemctl", "start", "--no-block", "ghlink.service"])
+        print("[ghlink] 已启用值守并异步触发第一轮（systemd timer，1 小时粒度）")
         return 0
     # crontab 回退
     line = f"0 * * * * {_python_cmd()} {_config_path()} >> /var/log/ghlink.log 2>&1"

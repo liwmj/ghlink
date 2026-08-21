@@ -76,7 +76,12 @@ def _tcp443(ip: str, timeout_sec: float) -> bool:
         return False
 
 
-def _precheck(ips: List[str], timeout_sec: float = 15.0) -> List[str]:
+def _precheck(ips: List[str], timeout_sec: float = 5.0) -> List[str]:
+    """TCP 443 预检，剔除不通 IP。
+
+    v0.2.19.1（拂晓 Linux 严格测试 #2）：超时 15s→5s 收敛——8 域名并行
+    resolve 后每个候选都做 TCP 预检，15s 超时在链路差环境会显著拖慢单轮。
+    """
     """候选 IP 列表预检：TCP 443 建连粗筛，返回通过子集。
 
     超时跟随探测配置（v0.2.8）；失败分类处理（v0.2.9 赛博设计口径）：
