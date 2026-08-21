@@ -118,6 +118,11 @@ def enable() -> int:
         return 2
     # 2026-08-17 Bug B 修复：enable 前确保 config 落位（/etc/ghlink/config.json 不存在则复制）
     _ensure_config()
+    # v0.2.19.2（赛博 Windows 严格测试 P1）：升级迁移——旧版 config 的
+    # state/lock/backup 可能是 Unix 绝对路径（/var/lib/ghlink/...），在 Windows
+    # 上无效 → 状态文件写不进 → 心跳停 + hosts 不落盘。检测到平台无效路径时
+    # 备份旧 config 并仅修正路径字段（保留 notify 等用户配置）。
+    _migrate_legacy_paths()
     try:
         if sys.platform == "win32":
             return _enable_windows()
@@ -174,6 +179,66 @@ def _ensure_config() -> None:
             os.chmod(os.path.dirname(cfg_path), 0o755)  # NOSONAR
         except OSError:
             pass
+
+
+def _platform_valid_path(path: str) -> bool:
+    """路径在当前平台是否有效。
+
+    Windows：Unix 绝对路径（/var/lib/ghlink/...，非盘符开头）无效；
+    POSIX：相对路径有效（会按 config 目录解析），绝对路径需 / 开头。
+    """
+    if not path:
+        return True
+    if sys.platform == "win32":
+        import re as _re
+
+        # 盘符开头（C:\）或 UNC（\\）或相对路径（无盘符、非 / 开头）有效
+        if _re.match(r"^[A-Za-z]:[\\/]", path) or path.startswith("\\"):
+            return True
+        return not path.startswith("/")
+    return True
+
+
+def _migrate_legacy_paths() -> None:
+    """升级迁移：修正 config 中平台无效的 state/lock/backup 路径字段。
+
+    v0.2.19.2（赛博 Windows 严格测试 P1）：旧版（<=0.2.18）config.example.json
+    模板是 Unix 绝对路径 /var/lib/ghlink/...，Windows 用户升级后 enable 不覆盖
+    已有 config → 首轮用旧配置 → 状态/锁路径无效 → hosts 不落盘 + 心跳停。
+    策略：备份旧 config（config.json.bak-<ts>），仅把平台无效的路径字段改为
+    相对路径（按 config 目录解析，三平台通用），其余字段（notify 等）保留。
+    """
+    cfg_path = _config_path()
+    if not cfg_path or not os.path.exists(cfg_path):
+        return
+    try:
+        import json as _json
+        import shutil as _shutil
+
+        with open(cfg_path, encoding="utf-8") as f:
+            cfg = _json.load(f)
+        fixed = {}
+        for key in ("state_file", "lock_file", "hosts_backup_dir"):
+            val = cfg.get(key)
+            if val and not _platform_valid_path(str(val)):
+                fixed[key] = val
+                cfg[key] = {  # 相对路径按 config 目录解析（_resolve_rel 语义）
+                    "state_file": "ghlink_status.json",
+                    "lock_file": "ghlink.lock",
+                    "hosts_backup_dir": "backup",
+                }[key]
+        if not fixed:
+            return
+        # 备份旧 config（可恢复）
+        ts = time.strftime("%Y%m%d%H%M%S")
+        bak = f"{cfg_path}.bak-{ts}"
+        _shutil.copy2(cfg_path, bak)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            _json.dump(cfg, f, ensure_ascii=False, indent=2)
+        for key, old_val in fixed.items():
+            print(f"[ghlink] 升级迁移：{key} 旧值 {old_val} 在当前平台无效，已改为 {cfg[key]}（旧配置备份 {bak}）")
+    except Exception as exc:
+        print(f"[ghlink] 升级迁移跳过：{exc}", file=sys.stderr)
 
 
 def disable() -> int:
