@@ -38,9 +38,9 @@ jobs:
           Write-Host "=== schtasks /Query（注册验证）==="
           schtasks /Query /TN ghlink
           Write-Host "schtasks query exit: $LASTEXITCODE"
-          # 等待首轮完成（探测 8 域名×timeout15s，宽限到 40s）
-          Write-Host "=== 等待首轮执行完成（40s）==="
-          Start-Sleep -Seconds 40
+          # 等待首轮完成（探测 8 域名×timeout15s 串行最坏 120s，宽限到 100s）
+          Write-Host "=== 等待首轮执行完成（100s）==="
+          Start-Sleep -Seconds 100
           Write-Host "=== ghlink status（首轮后心跳应正常）==="
           .\dist\windows\ghlink.exe status
           Write-Host "status exit: $LASTEXITCODE"
