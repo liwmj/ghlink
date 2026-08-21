@@ -1,6 +1,20 @@
 # ghlink 设计文档（DESIGN）
 
-> 版本：v0.2.0 ｜ 最后更新：2026-08-14 ｜ 状态：✅ 已实现并通过三平台验证（生产就绪）
+> 版本：v0.2.19 ｜ 最后更新：2026-08-21 ｜ 状态：✅ 已实现并通过三平台验证（生产就绪）
+>
+> ## 变更记录
+>
+> - **v0.2.19（2026-08-21，李工 8 条决策）**：
+>   1. README 补 `brew trust`（Homebrew 4.x 第三方 tap 默认不可信）
+>   2. `enable` 注册后立即执行第一轮（systemd start / launchctl kickstart / schtasks /Run），不等定时器；
+>      status 区分「首轮执行中」与「疑似僵尸」（_heartbeat_never）
+>   3. **hosts 常态维护**（设计修正）：正常态也写 hosts 段（内容无变化不落盘），保证全局访问生效，不再仅故障切换才写
+>   4. 托盘初始角标与 _refresh 同款判定（值守未启用→蓝，修复 Windows 绿角标+菜单未运行不匹配）
+>   5. Windows 值守链路：schtasks 失败输出真实 stderr（_run_cmd_output_error）；安装器预注册与 enable 对齐（/SC HOURLY + config 参数）
+>   6. GitHub520 静态兜底：初始化合一次（state 标记 github520_initialized），后续从现有 hosts 保留子段（# ghlink520 Start/End），只做动态更新
+>   7. brew formula config 模板直接同步 config.example.json（8 域名，不再手写旧模板）
+>   8. Windows 实测：GitHub Actions windows-latest 跑 ghlink.exe enable，验证注册+首轮+心跳+hosts 落盘完整闭环
+
 
 ## 1. 背景与目标
 
