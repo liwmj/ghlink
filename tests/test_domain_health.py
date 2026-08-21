@@ -79,7 +79,11 @@ class TestDomainHealth:
         assert st["probe"]["targets"]["github.com"]["degraded"] is False
 
     def test_h002_degraded_not_triggering_switch(self, tmp_path, monkeypatch):
-        """codeload 降级后，核心域名正常 → 全程零切换（不误触）。"""
+        """codeload 降级后，核心域名正常 → 无故障触发切换（hosts 段保持常态维护）。
+
+        v0.2.19（李工 8 条③）：正常态也写 hosts（段落常新），applied 非空是预期；
+        「零切换」= history 无 consecutive failures 触发、state 保持 normal。
+        """
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
@@ -98,7 +102,11 @@ class TestDomainHealth:
         )
         for _ in range(6):  # 超过降级阈值 + 超过触发阈值
             main.run(cfg_path)
-        assert applied == []  # 从未触发切换
+        assert applied, "v0.2.19：正常态也维护 hosts 段（段落常新）"
+        st = _read_state(tmp_path)
+        assert st["state"] == "normal"  # 从未因故障触发切换
+        triggers = [h.get("trigger", "") for h in st.get("history", [])]
+        assert not any("consecutive failures" in t for t in triggers), f"零故障切换: {triggers}"
 
     def test_h003_degraded_recovers(self, tmp_path, monkeypatch):
         """降级域名连续成功 2 轮 → 恢复纳入（degraded=False）。"""

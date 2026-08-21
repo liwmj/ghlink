@@ -111,6 +111,31 @@ def _run_cmd_output(args, timeout: int = 15) -> str:
         return ""
 
 
+def _run_cmd_output_error(args, timeout: int = 15) -> str:
+    """执行命令并返回 stderr（v0.2.19 新增，李工 8 条⑤）。
+
+    schtasks 等注册类命令失败时，真实报错在 stderr——原 _run_cmd 把
+    stdout/stderr 全吞掉导致「值守未运行」无法定位。此函数捕获 stderr
+    原文供 enable 输出。
+    """
+    try:
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc = subprocess.run(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+            text=True,
+            **kwargs,
+        )
+        return (proc.stderr or "").strip()
+    except Exception as exc:
+        return str(exc)
+
+
 def flush_dns() -> bool:
     """刷新 DNS 缓存；失败返回 False（记录日志，不阻断）。
 

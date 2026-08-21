@@ -38,18 +38,13 @@ class Ghlink < Formula
     chmod 0755, bin/"ghlink"
 
     # 配置目录（默认不自启，enable 时才注册系统 LaunchDaemon）
+    # v0.2.19（李工 8 条⑦）：config 模板直接同步 config.example.json（8 域名），
+    # 不再手写硬编码旧模板（旧模板只有 2 域名，与最新配置脱节）
     (etc/"ghlink").mkpath
-    (etc/"ghlink/config.json").write <<~EOS unless File.exist?(etc/"ghlink/config.json")
-      {
-        "probe": { "targets": ["github.com", "api.github.com"], "timeout_sec": 5 },
-        "trigger": { "consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2 },
-        "resolver": { "doh_sources": [], "cache_ttl_sec": 3600, "max_candidates": 5 },
-        "notify": { "enabled": false },
-        "state_file": "/var/lib/ghlink/ghlink_status.json",
-        "lock_file": "/var/lib/ghlink/ghlink.lock",
-        "hosts_backup_dir": "/var/lib/ghlink/backup"
-      }
-    EOS
+    unless File.exist?(etc/"ghlink/config.json")
+      tmpl = libexec/"config.example.json"
+      (etc/"ghlink/config.json").write(tmpl.read) if tmpl.exist?
+    end
   end
 
   def caveats

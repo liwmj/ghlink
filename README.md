@@ -125,8 +125,13 @@ ghlink 的语义模型（替代 2026-08-16 版「托盘=值守总开关」）：
 **macOS（Homebrew tap，推荐）**
 
 ```bash
+# 方式一：信任 tap 后安装（Homebrew 4.x 起第三方 tap 默认不可信，必须先 trust）
 brew tap liwmj/ghlink
+brew trust liwmj/ghlink        # 或 brew trust --formula liwmj/ghlink/ghlink
 brew install ghlink
+
+# 方式二：若已 tap 但 install 报 Refusing to load formula ... untrusted tap
+brew trust --formula liwmj/ghlink/ghlink && brew install ghlink
 ```
 
 **Windows（安装向导 / 裸 exe）**
