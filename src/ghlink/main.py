@@ -25,17 +25,36 @@ from . import hosts_manager, lock, notifier, probe, resolver, service, state
 DEFAULT_CONFIG_FILE = "config.json"
 
 
+def _config_base(config_path: str) -> str:
+    """路径解析基准目录（v0.2.19 ⑧②：锁/状态/备份路径绝不依赖 cwd）。
+
+    - config 文件存在 → 其所在目录
+    - config 不存在/未知参数（如 ghlink.exe version）→ 平台默认目录：
+      Windows %ProgramData%\\ghlink（SYSTEM 可写）／root /etc/ghlink／其他 ~/.ghlink
+    """
+    if config_path and os.path.exists(config_path):
+        return os.path.dirname(os.path.abspath(config_path))
+    if sys.platform == "win32":
+        return os.path.join(
+            os.environ.get("ProgramData", r"C:\ProgramData"), "ghlink"
+        )
+    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        return "/etc/ghlink"
+    return os.path.join(os.path.expanduser("~"), ".ghlink")
+
+
 def _resolve_rel(value: str, config_path: str) -> str:
-    """相对路径 → 相对 config.json 所在目录解析；绝对路径原样返回。
+    """相对路径 → 相对 config 目录解析；绝对路径原样返回。
 
     2026-08-17 赛博补强（Bug B 根治）：老配置/用户自定义的相对路径
     state_file/lock_file/backup 仍会依赖 cwd（systemd 写 /、CLI 读 cwd），
     必须统一相对 config 目录解析，不靠打包补丁。
+    2026-08-21（李工 8 条⑧）：config 不存在/未知参数时基准落到平台默认目录，
+    绝不依赖 cwd——修 ghlink.exe version 从任意目录跑崩溃（锁路径白名单 ValueError）。
     """
     if not value or os.path.isabs(value):
         return value
-    base = os.path.dirname(os.path.abspath(config_path))
-    return os.path.join(base, value)
+    return os.path.join(_config_base(config_path), value)
 
 
 def _state_path(cfg: Dict[str, Any], config_path: str = DEFAULT_CONFIG_FILE) -> str:
@@ -155,6 +174,13 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                 break
             entries[tgt] = cands
         if not ok_candidates or not entries:
+            if ok:
+                # v0.2.19（李工 8 条③）：正常态解析失败不降级——probe 网络本就通，
+                # hosts 段是优化不是必需（root 值守可补写），保持 normal 仅记录
+                st["state"] = "normal"
+                st["last_error"] = "resolver failed (normal state kept)"
+                state.save(st_path, st)
+                return 0
             st["state"] = "degraded"
             st["last_error"] = "no valid IP candidates"
             # v0.2.8：缓存也空时补充提示（帮助区分全源失败 vs 缓存兜底失效）
@@ -334,21 +360,27 @@ def main() -> None:
         from . import tray
 
         sys.exit(tray.main())
-    if first in ("--version", "-V"):
+    if first in ("--version", "-V", "version"):
         from . import __version__
 
         print(f"ghlink {__version__}")
         sys.exit(0)
-    if first in ("--help", "-h"):
-        print("用法: ghlink [run|enable|disable|status|tray] [config.json]")
+    if first in ("--help", "-h", "help"):
+        print("用法: ghlink [run|enable|disable|status|tray|version|help] [config.json]")
         print("  run      单轮探测+自愈（默认，可省略）")
         print("  enable   注册定时任务（1 小时粒度，需管理员/root）")
         print("  disable  移除定时任务")
         print("  status   显示当前状态与值守情况")
         print("  tray     系统托盘（Windows/macOS，需安装包版；Linux 纯 CLI）")
+        print("  version  显示版本号")
         sys.exit(0)
-    # 兼容旧用法：直接传 config 路径
-    sys.exit(run(first))
+    # v0.2.19（李工 8 条⑧）：未知参数不再裸当 config 路径跑 run()——
+    # 之前 ghlink.exe version 会触发锁路径依赖 cwd → 非白名单目录崩溃。
+    # 仅当参数是已存在的 config 文件时才兼容旧用法，否则提示帮助。
+    if os.path.exists(first):
+        sys.exit(run(first))
+    print(f"[ghlink] 未知命令或 config 不存在: {first}（可用 ghlink --help 查看用法）", file=sys.stderr)
+    sys.exit(2)
 
 
 if __name__ == "__main__":

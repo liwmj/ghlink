@@ -37,8 +37,12 @@ def _safe_lock_path(lock_path: str) -> str:
     resolved = os.path.realpath(lock_path)
     if not os.path.isabs(resolved):
         raise ValueError(f"lock path must be absolute: {lock_path}")
+    # v0.2.19（李工 8 条⑧）：锁路径基准已改为平台默认目录（_config_base），
+    # 白名单同步补 %ProgramData%\ghlink（Windows SYSTEM 可写）与 /etc/ghlink（root）
     allowed_roots = (
         "/var/lib/ghlink",
+        "/etc/ghlink",
+        os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "ghlink"),
         tempfile.gettempdir(),
         os.path.expanduser("~"),
     )
