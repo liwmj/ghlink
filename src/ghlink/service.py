@@ -231,6 +231,10 @@ def _watch_status_text() -> str:
     主判据=平台任务注册；次判据=心跳新鲜。
     注册+心跳新=已启用；注册但心跳停=僵尸（异常）；未注册=未启用。
     托盘进程降为展示层，附「托盘: 运行中/未运行」辅助行。
+
+    v0.2.19（李工 8 条②）：注册但心跳停时，区分「首轮执行中」（从未心跳）
+    与「疑似僵尸」（历史有心跳但已停）——enable 后立即触发第一轮，首轮
+    探测期间查 status 不再误报僵尸。
     """
     try:
         registered = _is_registered()
@@ -239,7 +243,10 @@ def _watch_status_text() -> str:
         if registered and hb:
             base = "已启用（值守注册 + 心跳正常）"
         elif registered and not hb:
-            base = "异常（值守已注册但心跳已停，疑似僵尸）"
+            if _heartbeat_never():
+                base = "已启用（首轮执行中，心跳待写入）"
+            else:
+                base = "异常（值守已注册但心跳已停，疑似僵尸）"
         else:
             base = "未启用（运行 ghlink enable 开启值守）"
         return f"{base}｜托盘: {'运行中' if tray else '未运行'}"
@@ -523,6 +530,20 @@ def _heartbeat_fresh(max_age_sec: int = 5400) -> bool:
         return 0 <= age <= max_age_sec
     except Exception:
         return False
+
+
+def _heartbeat_never() -> bool:
+    """状态文件是否从未写入心跳（timestamp 为空）→ 首轮尚未完成。
+
+    v0.2.19（李工 8 条②）：enable 后立即触发第一轮，但首轮探测（8 域名×
+    timeout 15s）需要时间——此时查 status 心跳必停，误报「僵尸」吓人。
+    用「从未心跳」区分：首轮执行中 vs 真僵尸（历史有心跳但已停）。
+    """
+    try:
+        st = state.load(_state_path())
+        return not (st.get("timestamp") or "")
+    except Exception:
+        return True
 
 
 def _is_enabled() -> bool:
