@@ -4,7 +4,7 @@
 ; 特性: 图形安装向导 + Program Files + PATH + 开始菜单 + 卸载项 + 开机自启选项（默认勾选）
 
 #define MyAppName "ghlink"
-#define MyAppVersion "0.2.18"
+#define MyAppVersion "0.2.19"
 #define MyAppPublisher "Mason Lee"
 #define MyAppExeName "ghlink.exe"
 #define MyAppId "{{B7E3C9A1-2F4D-4A6E-9C81-0D1F2B3C4D5E}"
@@ -65,8 +65,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; 安装时预注册 SYSTEM 值守任务（默认 disabled，无窗口 ghlink-watch.exe）——
+; v0.2.19（李工 8 条⑤）：与 enable 对齐 /SC HOURLY（原 /SC MINUTE /MO 1 与
+; enable 的 HOURLY 不一致，且 /TR 未带 config 参数 → 托盘「值守未运行」无法定位）
 ; 方案 A（李工 13:44/13:50 定调）：托盘=值守总开关，安装预注册后托盘启动只需启停 UAC
-Filename: "{cmd}"; Parameters: "/C schtasks /Create /TN ghlink /SC MINUTE /MO 1 /TR ""{app}\ghlink-watch.exe"" /RL HIGHEST /RU SYSTEM /DISABLE /F";   Description: "预注册 ghlink 值守任务（默认停用 /DISABLE，托盘启动或勾选自启才启用）"; Flags: runhidden nowait
+Filename: "{cmd}"; Parameters: "/C schtasks /Create /TN ghlink /SC HOURLY /TR ""{app}\ghlink-watch.exe"" ""{userprofile}\.ghlink\config.json"" /RL HIGHEST /RU SYSTEM /DISABLE /F";   Description: "预注册 ghlink 值守任务（默认停用 /DISABLE，托盘启动或勾选自启才启用）"; Flags: runhidden nowait
 ; 安装后：勾选自启则启用值守（schtasks）
 Filename: "{app}\{#MyAppExeName}"; Parameters: "enable"; \
   Description: "启用 ghlink 值守（开机自启）"; Flags: nowait postinstall skipifsilent; Tasks: autostart

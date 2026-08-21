@@ -110,9 +110,18 @@ def test_hide_dock_icon_non_darwin(monkeypatch):
 
 
 def test_hide_dock_icon_darwin_fallback(monkeypatch):
-    """macOS 无 objc 库（异常环境）：_hide_dock_icon 静默降级不阻塞托盘。"""
+    """macOS 无 objc 库（异常环境）：_hide_dock_icon 静默降级不阻塞托盘。
+
+    拂晓 Linux 复验（2026-08-21 19:31）：字符串路径 monkeypatch
+    "ctypes.util.find_library" 在 darwin 平台假象下触发 ctypes.util 重新
+    import → 走 ctypes.macholib（仅 macOS 有）→ Linux ImportError。
+    改为直接对象引用：先取 ctypes.util 模块（真实平台下已 import 完成），
+    再 monkeypatch 其属性，不再触发重导入。
+    """
+    import ctypes.util as _ctu
+
     monkeypatch.setattr(tray.sys, "platform", "darwin")
-    monkeypatch.setattr("ctypes.util.find_library", lambda name: None)
+    monkeypatch.setattr(_ctu, "find_library", lambda name: None)
     tray._hide_dock_icon()  # 不应抛异常
 
 

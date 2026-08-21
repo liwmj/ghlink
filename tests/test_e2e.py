@@ -60,7 +60,11 @@ class TestFullCycle:
         assert state["probe"]["consecutive_failures"] == 0
 
     def test_e002_success_resets_counter_no_trigger(self, tmp_path, monkeypatch):
-        """失败 2 轮后成功 1 轮 → 计数清零，不触发切换。"""
+        """失败 2 轮后成功 1 轮 → 计数清零，不触发故障切换。
+
+        v0.2.19（李工 8 条③）：正常态也写 hosts（段落常新），applied 非空是预期；
+        「不触发」= history 无 consecutive failures 触发、计数清零。
+        """
         cfg_path = make_config(tmp_path)
         calls = {"n": 0}
 
@@ -76,9 +80,17 @@ class TestFullCycle:
             "ghlink.hosts_manager.apply_block",
             lambda block, backup_dir: applied.append(block) or (True, backup_dir),
         )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(4):
             main.run(cfg_path)
-        assert applied == []  # 从未触发切换
+        assert applied, "v0.2.19：正常态也维护 hosts 段（段落常新）"
+        st = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert st["state"] == "normal"
+        assert st["probe"]["consecutive_failures"] == 0  # 成功轮清零
+        triggers = [h.get("trigger", "") for h in st.get("history", [])]
+        assert not any("consecutive failures" in t for t in triggers), f"无故障触发: {triggers}"
 
     def test_e004_all_sources_fail_keeps_config_degraded(self, tmp_path, monkeypatch):
         """全源失败 → 不换配置 + 告警 + degraded。"""
@@ -160,6 +172,16 @@ class TestFullCycle:
             lambda targets, timeout: {
                 t: {"ok": True, "latency_ms": 10, "error": None} for t in targets
             },
+        )
+        # 拂晓 Linux 复验（2026-08-21 19:31）：e008 原未 mock resolver/apply/verify，
+        # 走真实网络 + 真实 hosts 写入 → 偶发失败（网络抖动/权限差异）。
+        # 补 mock 保证确定性：v0.2.19 正常态也写 hosts，全部打桩。
+        monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
         )
         code = main.run(cfg_path)
         assert code == 0

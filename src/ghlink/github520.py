@@ -27,7 +27,7 @@ def _cache_path(state_dir: str = "") -> str:
 
 def fetch_hosts(url: str, timeout_sec: float = 30) -> str:
     """拉取 GitHub520 hosts 文本（失败抛异常，由调用方降级）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.2.18"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.2.19"})
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         return resp.read().decode("utf-8", errors="replace")
 

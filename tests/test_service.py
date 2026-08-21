@@ -347,9 +347,15 @@ class TestWatchStatusText:
         assert "托盘: 运行中" in text
 
     def test_zombie(self, monkeypatch):
-        """注册但心跳停 = 僵尸（异常）。"""
+        """注册但心跳停 = 僵尸（异常）。
+
+        拂晓 Linux 复验（2026-08-21 19:31）：CI 干净环境无状态文件时
+        _heartbeat_never() 返回 True → 显示「首轮执行中」而非「僵尸」。
+        补 mock _heartbeat_never=False（模拟历史有心跳但已停 = 真僵尸）。
+        """
         monkeypatch.setattr(service, "_is_registered", lambda: True)
         monkeypatch.setattr(service, "_heartbeat_fresh", lambda: False)
+        monkeypatch.setattr(service, "_heartbeat_never", lambda: False)
         monkeypatch.setattr(service, "_tray_alive", lambda: True)
         text = service._watch_status_text()
         assert "异常" in text

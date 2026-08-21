@@ -60,12 +60,16 @@ def _config_path() -> str:
     按可读性回退系统级 config（/usr/local/etc/ghlink → /etc/ghlink），
     让普通用户 status/tray 能拿到绝对路径 state_file（Bug C 的 chmod 0644
     在此链路下才能真正闭环）。
+
+    2026-08-21 v0.2.19（李工 8 条②）：补 /opt/homebrew 候选——Apple Silicon
+    brew 前缀是 /opt/homebrew，_ensure_config() 模板候选也同步补。
     """
     primary = os.path.join(_install_prefix(), "config.json")
     if os.path.exists(primary):
         return primary
     if os.name == "posix" and os.geteuid() != 0:
         for cand in (
+            "/opt/homebrew/etc/ghlink/config.json",
             "/usr/local/etc/ghlink/config.json",
             "/etc/ghlink/config.json",
         ):
@@ -140,13 +144,14 @@ def _ensure_config() -> None:
 
     cfg_path = _config_path()
     if not os.path.exists(cfg_path):
-        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share
+        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share（v0.2.19 补 /opt/homebrew）
         candidates = [
             os.path.join(os.getcwd(), "config.example.json"),
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "config.example.json",
             ),
+            "/opt/homebrew/Cellar/ghlink/libexec/config.example.json",
             "/usr/local/Cellar/ghlink/libexec/config.example.json",
             "/usr/share/ghlink/config.example.json",
             "/usr/lib/ghlink/config.example.json",
@@ -226,6 +231,10 @@ def _watch_status_text() -> str:
     主判据=平台任务注册；次判据=心跳新鲜。
     注册+心跳新=已启用；注册但心跳停=僵尸（异常）；未注册=未启用。
     托盘进程降为展示层，附「托盘: 运行中/未运行」辅助行。
+
+    v0.2.19（李工 8 条②）：注册但心跳停时，区分「首轮执行中」（从未心跳）
+    与「疑似僵尸」（历史有心跳但已停）——enable 后立即触发第一轮，首轮
+    探测期间查 status 不再误报僵尸。
     """
     try:
         registered = _is_registered()
@@ -234,7 +243,10 @@ def _watch_status_text() -> str:
         if registered and hb:
             base = "已启用（值守注册 + 心跳正常）"
         elif registered and not hb:
-            base = "异常（值守已注册但心跳已停，疑似僵尸）"
+            if _heartbeat_never():
+                base = "已启用（首轮执行中，心跳待写入）"
+            else:
+                base = "异常（值守已注册但心跳已停，疑似僵尸）"
         else:
             base = "未启用（运行 ghlink enable 开启值守）"
         return f"{base}｜托盘: {'运行中' if tray else '未运行'}"
@@ -520,6 +532,20 @@ def _heartbeat_fresh(max_age_sec: int = 5400) -> bool:
         return False
 
 
+def _heartbeat_never() -> bool:
+    """状态文件是否从未写入心跳（timestamp 为空）→ 首轮尚未完成。
+
+    v0.2.19（李工 8 条②）：enable 后立即触发第一轮，但首轮探测（8 域名×
+    timeout 15s）需要时间——此时查 status 心跳必停，误报「僵尸」吓人。
+    用「从未心跳」区分：首轮执行中 vs 真僵尸（历史有心跳但已停）。
+    """
+    try:
+        st = state.load(_state_path())
+        return not (st.get("timestamp") or "")
+    except Exception:
+        return True
+
+
 def _is_enabled() -> bool:
     """值守是否真正在跑（2026-08-17 李工新口径：值守独立于托盘）。
 
@@ -537,7 +563,11 @@ def _is_enabled() -> bool:
 
 
 def _enable_linux() -> int:
-    """Linux：优先 systemd timer，回退 crontab。"""
+    """Linux：优先 systemd timer，回退 crontab。
+
+    v0.2.19（李工 8 条②）：注册完成后立即触发第一轮——
+    systemd 直接 start oneshot service；crontab 直接跑一次，不等整点。
+    """
     if os.path.exists("/run/systemd/system"):
         unit = f"""[Unit]
 Description=ghlink GitHub connectivity self-healing
@@ -568,7 +598,11 @@ WantedBy=timers.target
             return 2
         if not platform_adapter._run_cmd(["systemctl", "enable", "--now", "ghlink.timer"]):
             return 2
-        print("[ghlink] 已启用值守（systemd timer，1 小时粒度）")
+        # v0.2.19：注册完立即跑第一轮（不等 OnCalendar 整点）
+        if platform_adapter._run_cmd(["systemctl", "start", "ghlink.service"]):
+            print("[ghlink] 已启用值守并立即执行第一轮（systemd timer，1 小时粒度）")
+        else:
+            print("[ghlink] 已启用值守（systemd timer，1 小时粒度）；首轮手动启动失败，将等整点")
         return 0
     # crontab 回退
     line = f"0 * * * * {_python_cmd()} {_config_path()} >> /var/log/ghlink.log 2>&1"
@@ -581,7 +615,14 @@ WantedBy=timers.target
         if not platform_adapter._run_cmd(["crontab", tmp]):
             return 2
         os.unlink(tmp)
-    print("[ghlink] 已启用值守（crontab，1 小时粒度）")
+    # v0.2.19：注册完立即跑第一轮（不等整点）
+    import subprocess as _sp
+
+    try:
+        _sp.run(["/bin/sh", "-c", line], timeout=300, check=False)
+    except Exception:
+        pass
+    print("[ghlink] 已启用值守并立即执行第一轮（crontab，1 小时粒度）")
     return 0
 
 
@@ -630,7 +671,9 @@ def _enable_macos() -> int:
         ["launchctl", "load", "/Library/LaunchDaemons/com.ghlink.plist"]
     ):
         return 2
-    print("[ghlink] 已启用值守（LaunchDaemon，1 小时粒度）")
+    # v0.2.19（李工 8 条②）：注册完立即触发第一轮（RunAtLoad 已保证，kickstart 兜底确保）
+    platform_adapter._run_cmd(["launchctl", "kickstart", "-k", "system/com.ghlink.daemon"])
+    print("[ghlink] 已启用值守并立即执行第一轮（LaunchDaemon，1 小时粒度）")
     return 0
 
 
@@ -649,6 +692,8 @@ def _enable_windows() -> int:
     # P1 修复（赛博 2026-08-14）：参数数组传递，不用 split() 拆命令串——
     # /TR 的引号参数（含空格路径）必须作为单个元素，split() 会拆坏导致 schtasks 注册失败
     # 弹窗修复（李工 13:34 反馈）：值守用 windowed 入口（ghlink-watch.exe）静默跑，不弹命令行
+    # v0.2.19（李工 8 条⑤）：schtasks 失败必须输出真实报错（原 _run_cmd 吞掉 stderr，
+    # 导致「值守未运行」无法定位）；注册成功立即 /Run 触发第一轮
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
         watch = os.path.join(exe_dir, "ghlink-watch.exe")
@@ -672,8 +717,18 @@ def _enable_windows() -> int:
         "/F",
     ]
     if not platform_adapter._run_cmd(args):
+        # 输出真实报错（schtasks stderr），帮助定位「值守未运行」根因
+        err = platform_adapter._run_cmd_output_error(args)
+        print(
+            f"[ghlink] enable 失败：schtasks /Create 未成功。原始输出：{err or '(无输出)'}",
+            file=sys.stderr,
+        )
         return 2
-    print("[ghlink] 已启用值守（schtasks，1 小时粒度，最高权限）")
+    # v0.2.19（李工 8 条②⑤）：注册成功立即触发第一轮 + 输出注册结果
+    if platform_adapter._run_cmd(["schtasks", "/Run", "/TN", "ghlink"]):
+        print("[ghlink] 已启用值守并立即执行第一轮（schtasks，1 小时粒度，最高权限）")
+    else:
+        print("[ghlink] 已启用值守（schtasks，1 小时粒度，最高权限）；首轮触发失败，将等整点")
     return 0
 
 

@@ -176,22 +176,31 @@ def _make_icon(color: str, size: int = 64):
     return img
 
 
-def _refresh(icon: Any) -> None:
-    """定时刷新：状态文件 → 图标颜色 + 菜单文字。
+def _state_color() -> str:
+    """状态灯四色判定（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
 
-    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    v0.2.19（李工 8 条④）：初始图标与 _refresh 共用此判定，不再各自为政——
+    修复 Windows 托盘启动瞬间「绿角标+菜单未运行」不匹配（原 main() 只看 state
+    映射，没判断值守是否启用）。
     """
     st = _load_state()
     s = st.get("state", "normal")
     watching = service._is_enabled()
     if s in ("degraded",):
-        color = _COLOR["degraded"]  # 异常红（最高优先）
-    elif s in ("verifying", "switching"):
-        color = _COLOR["verifying"]  # 切换/验证中黄
-    elif watching:
-        color = _COLOR["normal"]  # 值守启用且正常绿
-    else:
-        color = _COLOR["idle"]  # 正常但值守未启用蓝
+        return _COLOR["degraded"]  # 异常红（最高优先）
+    if s in ("verifying", "switching"):
+        return _COLOR["verifying"]  # 切换/验证中黄
+    if watching:
+        return _COLOR["normal"]  # 值守启用且正常绿
+    return _COLOR["idle"]  # 正常但值守未启用蓝
+
+
+def _refresh(icon: Any) -> None:
+    """定时刷新：状态文件 → 图标颜色 + 菜单文字。
+
+    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    """
+    color = _state_color()
     try:
         icon.icon = _make_icon(color)
         icon.title = _status_text()
@@ -511,9 +520,9 @@ def main() -> int:
     # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
     service._write_tray_pid()
 
-    st = _load_state()
-    s = st.get("state", "normal")
-    color = _COLOR.get(s, "#8E8E93")
+    # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定
+    # （值守未启用→蓝，修复绿角标+菜单未运行不匹配）
+    color = _state_color()
     icon = pystray.Icon(
         "ghlink",
         _make_icon(color),
