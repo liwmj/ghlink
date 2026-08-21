@@ -161,15 +161,26 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                 del github520_entries[d]
 
         # 3) 解析活跃域名动态 IP（正常态也解析，保证 hosts 段常新）
+        # v0.2.19.1（拂晓 Linux 严格测试 #2）：并行 resolve——8 域名串行
+        # （4 DoH + TCP 预检 × 15s）在链路差环境单轮 200s+，恢复时限不达标
         entries: Dict[str, list] = {}
         ok_candidates = True
         resolver_cfg = cfg.get("resolver", {})
-        for tgt in active:
-            cands = resolver.resolve_best(tgt, resolver_cfg)
-            if not cands:
-                ok_candidates = False
-                break
-            entries[tgt] = cands
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        with _TPE(max_workers=max(len(active), 1)) as _pool:
+            _futs = {_pool.submit(resolver.resolve_best, tgt, resolver_cfg): tgt for tgt in active}
+            for _f in _futs:
+                tgt = _futs[_f]
+                try:
+                    cands = _f.result()
+                except Exception:
+                    cands = []
+                if not cands:
+                    ok_candidates = False
+                    entries[tgt] = []
+                    continue
+                entries[tgt] = cands
         if not ok_candidates or not entries:
             if ok:
                 # v0.2.19（李工 8 条③）：正常态解析失败不降级——probe 网络本就通，

@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.2.18"
+VERSION="0.2.19"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 
@@ -42,9 +42,18 @@ EOF
 chmod 0755 "$BUILD_DIR/usr/bin/ghlink"
 
 # 4. 默认配置 + 示例
+# v0.2.19.1（拂晓 Linux 严格测试 #3）：config.example.json 为平台无关相对路径
+# （修 Windows 模板），deb 安装必须用绝对路径模板——否则状态文件从 /var/lib/ghlink/
+# 漂移到 /etc/ghlink/，0.2.17→0.2.19 升级用户"失忆"（旧心跳/历史全断）。
+# 这里复制后用 sed 把相对路径字段改写为 /var/lib/ghlink/ 绝对路径。
 cp config.example.json "$BUILD_DIR/usr/share/ghlink/config.example.json"
+_abs_template() {
+  sed -e 's|"state_file": "ghlink_status.json"|"state_file": "/var/lib/ghlink/ghlink_status.json"|' \
+      -e 's|"lock_file": "ghlink.lock"|"lock_file": "/var/lib/ghlink/ghlink.lock"|' \
+      -e 's|"hosts_backup_dir": "backup"|"hosts_backup_dir": "/var/lib/ghlink/backup"|'
+}
 if [ ! -f "$BUILD_DIR/etc/ghlink/config.json" ]; then
-    cp config.example.json "$BUILD_DIR/etc/ghlink/config.json"
+    _abs_template < config.example.json > "$BUILD_DIR/etc/ghlink/config.json"
 fi
 
 # 5. 打包（拂晓复测 P1: 不用管道吞错误，失败必须退出非 0，CI 才能正确报错）
