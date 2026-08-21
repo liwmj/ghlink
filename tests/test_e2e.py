@@ -173,6 +173,16 @@ class TestFullCycle:
                 t: {"ok": True, "latency_ms": 10, "error": None} for t in targets
             },
         )
+        # 拂晓 Linux 复验（2026-08-21 19:31）：e008 原未 mock resolver/apply/verify，
+        # 走真实网络 + 真实 hosts 写入 → 偶发失败（网络抖动/权限差异）。
+        # 补 mock 保证确定性：v0.2.19 正常态也写 hosts，全部打桩。
+        monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         code = main.run(cfg_path)
         assert code == 0
         state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
