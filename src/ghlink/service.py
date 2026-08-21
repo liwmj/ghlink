@@ -719,7 +719,10 @@ def _enable_windows() -> int:
     if not platform_adapter._run_cmd(args):
         # 输出真实报错（schtasks stderr），帮助定位「值守未运行」根因
         err = platform_adapter._run_cmd_output_error(args)
-        print(f"[ghlink] enable 失败：schtasks /Create 未成功。原始输出：{err or '(无输出)'}", file=sys.stderr)
+        print(
+            f"[ghlink] enable 失败：schtasks /Create 未成功。原始输出：{err or '(无输出)'}",
+            file=sys.stderr,
+        )
         return 2
     # v0.2.19（李工 8 条②⑤）：注册成功立即触发第一轮 + 输出注册结果
     if platform_adapter._run_cmd(["schtasks", "/Run", "/TN", "ghlink"]):

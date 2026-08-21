@@ -520,8 +520,8 @@ def main() -> int:
     # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
     service._write_tray_pid()
 
-    st = _load_state()
-    # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定（值守未启用→蓝，修复绿角标+菜单未运行不匹配）
+    # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定
+    # （值守未启用→蓝，修复绿角标+菜单未运行不匹配）
     color = _state_color()
     icon = pystray.Icon(
         "ghlink",

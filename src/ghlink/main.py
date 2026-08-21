@@ -29,14 +29,15 @@ def _config_base(config_path: str) -> str:
     """路径解析基准目录（v0.2.19 ⑧②：锁/状态/备份路径绝不依赖 cwd）。
 
     - config 文件存在 → 其所在目录
-    - config 不存在/未知参数（如 ghlink.exe version）→ 平台默认目录：
+    - config 路径为显式指定（非默认 config.json，即使文件暂不存在）→ 其所在目录
+    - 默认/未知参数 → 平台默认目录：
       Windows %ProgramData%\\ghlink（SYSTEM 可写）／root /etc/ghlink／其他 ~/.ghlink
     """
-    if config_path and os.path.exists(config_path):
+    if config_path and config_path != DEFAULT_CONFIG_FILE:
         return os.path.dirname(os.path.abspath(config_path))
     if sys.platform == "win32":
         return os.path.join(
-            os.environ.get("ProgramData", r"C:\ProgramData"), "ghlink"
+            os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink"
         )
     if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
         return "/etc/ghlink"
@@ -134,8 +135,6 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
     targets = _targets(cfg)
     timeout = _timeout(cfg)
     consecutive_needed = int(cfg.get("trigger", {}).get("consecutive_failures", 3))
-    verify_rounds = int(cfg.get("trigger", {}).get("verify_success_rounds", 2))
-
     st_path = _state_path(cfg, config_path)
     st = state.load(st_path)
     webhook = cfg.get("notify", {}).get("feishu_webhook", "")
@@ -379,7 +378,10 @@ def main() -> None:
     # 仅当参数是已存在的 config 文件时才兼容旧用法，否则提示帮助。
     if os.path.exists(first):
         sys.exit(run(first))
-    print(f"[ghlink] 未知命令或 config 不存在: {first}（可用 ghlink --help 查看用法）", file=sys.stderr)
+    print(
+        f"[ghlink] 未知命令或 config 不存在: {first}（可用 ghlink --help 查看用法）",
+        file=sys.stderr,
+    )
     sys.exit(2)
 
 

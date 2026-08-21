@@ -42,7 +42,7 @@ def _safe_lock_path(lock_path: str) -> str:
     allowed_roots = (
         "/var/lib/ghlink",
         "/etc/ghlink",
-        os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "ghlink"),
+        os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink"),
         tempfile.gettempdir(),
         os.path.expanduser("~"),
     )
