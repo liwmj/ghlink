@@ -54,7 +54,7 @@ trap restore_hosts EXIT
 TMP=$(mktemp -d /tmp/ghlink-smoke.XXXXXX)
 cat > "$TMP/config.json" << EOF
 {
-  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 5,
+  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 15,
             "core_targets": ["github.com", "api.github.com"], "degrade_after_rounds": 10, "recover_rounds": 2},
   "trigger": {"consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2},
   "resolver": {"doh_sources": ["https://dns.alidns.com/resolve", "https://doh.pub/dns-query", "https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"], "cache_ttl_sec": 3600, "max_candidates": 5},
@@ -150,7 +150,7 @@ $RUN >/dev/null 2>&1; rc=$?
 # ⑤ 冷却防抖：切换成功后冷却期内再失败 → 不重复切换
 cat > "$TMP/cool.json" << EOF
 {
-  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 5},
+  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 15},
   "trigger": {"consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2},
   "resolver": {"doh_sources": ["https://dns.alidns.com/resolve", "https://doh.pub/dns-query", "https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"], "cache_ttl_sec": 3600, "max_candidates": 5},
   "notify": {"enabled": false, "feishu_webhook": ""},
