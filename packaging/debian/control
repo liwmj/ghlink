@@ -1,5 +1,6 @@
 Package: ghlink
-Version: 0.2.1-1
+# Version 构建时由 build_deb.sh 动态注入（sed 替换为 ${VERSION}-1），勿手改
+Version: 0.0.0-1
 Section: net
 Priority: optional
 Architecture: all
@@ -8,5 +9,5 @@ Maintainer: Mason Lee <liwmj@outlook.com>
 Description: GitHub 链路自愈工具
  主动监控 GitHub 连通性，异常时自动获取新 IP 写入 hosts，
  自检回滚 + 多渠道告警，跨平台零依赖。
- 使用: ghlink enable 启用值守（systemd timer，1 分钟粒度），
- ghlink status 查看状态，ghlink disable 停用。
+ 使用: ghlink enable 启用值守（systemd timer，1 小时粒度，
+ v0.2.18 起），ghlink status 查看状态，ghlink disable 停用。

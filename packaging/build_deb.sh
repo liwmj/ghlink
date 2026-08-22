@@ -24,6 +24,9 @@ mkdir -p "$BUILD_DIR/DEBIAN" \
 
 # 1. DEBIAN 控制文件
 cp packaging/debian/control "$BUILD_DIR/DEBIAN/control"
+# v0.3.1 修复（跟进人 Linux 回归发现，2026-08-22）：control 里 Version 写死 0.2.1-1
+# 与资产名不一致 → apt 升级比版本号错乱。构建时动态注入 ${VERSION}-1
+sed -i "s/^Version: .*/Version: ${VERSION}-1/" "$BUILD_DIR/DEBIAN/control"
 cp packaging/debian/postinst "$BUILD_DIR/DEBIAN/postinst"
 cp packaging/debian/prerm "$BUILD_DIR/DEBIAN/prerm"
 chmod 0755 "$BUILD_DIR/DEBIAN/postinst" "$BUILD_DIR/DEBIAN/prerm"
