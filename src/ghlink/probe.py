@@ -56,6 +56,50 @@ def probe_target(host: str, timeout_sec: float) -> Dict[str, object]:
         return {"ok": False, "latency_ms": ms, "error": str(exc)[:120]}
 
 
+def probe_tcp_only(host: str, timeout_sec: float) -> Dict[str, object]:
+    """仅 TCP 443 建连探测（v0.4.4 verify 分级宽容降级用）。
+
+    2026-08-23 顾笙无缓存场景专项发现：verify 三层校验（TCP+TLS+HTTP HEAD）
+    在 TLS 干扰环境下误杀（TLS 握手被干扰但 IP 实际可达）→ 兜底写入后
+    回滚清空主条目。分级宽容：先三层全检，失败目标用 TCP-only 复检——
+    TCP 通判通过（与预检同口径），TCP 也不通才判失败（真坏 IP 仍回滚）。
+    """
+    start = time.monotonic()
+    try:
+        sock = socket.create_connection((host, 443), timeout=timeout_sec)
+        try:
+            return {
+                "ok": True,
+                "latency_ms": int((time.monotonic() - start) * 1000),
+                "error": None,
+            }
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+    except Exception as exc:
+        return {
+            "ok": False,
+            "latency_ms": int((time.monotonic() - start) * 1000),
+            "error": str(exc)[:120],
+        }
+
+
+def probe_tcp_only_many(targets: List[str], timeout_sec: float) -> Dict[str, Dict[str, object]]:
+    """批量 TCP-only 探测（v0.4.4 verify 分级宽容降级用），并行执行。"""
+    results: Dict[str, Dict[str, object]] = {}
+    with ThreadPoolExecutor(max_workers=len(targets) or 1) as pool:
+        futures = {pool.submit(probe_tcp_only, h, timeout_sec): h for h in targets}
+        for fut in futures:
+            host = futures[fut]
+            try:
+                results[host] = fut.result()
+            except Exception as exc:
+                results[host] = {"ok": False, "latency_ms": 0, "error": str(exc)[:120]}
+    return results
+
+
 def probe_all(targets: List[str], timeout_sec: float) -> Dict[str, Dict[str, object]]:
     """并行探测全部目标，返回 {host: 结果}。单轮成功 = 全部 ok。"""
     results: Dict[str, Dict[str, object]] = {}
