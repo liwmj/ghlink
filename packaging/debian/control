@@ -1,5 +1,4 @@
 Package: ghlink
-# Version 构建时由 build_deb.sh 动态注入（sed 替换为 ${VERSION}-1），勿手改
 Version: 0.0.0-1
 Section: net
 Priority: optional
