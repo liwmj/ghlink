@@ -1,6 +1,0 @@
-{
-  "title": "v0.3.0: 内置github520兜底+卸载删配置三平台+tag格式校验",
-  "head": "fix/v0.3.0-cleanup",
-  "base": "master",
-  "body": "李工 2026-08-22 批注整改：\n1. 版本号 0.2.19->0.3.0（清 4 位 tag v0.2.19.1/v0.2.19.2，SemVer MINOR）\n2. 卸载/换版本删旧配置：Windows iss InstallDelete+UninstallDelete / Linux prerm / macOS brew\n3. 动态机制保留（动态为主、静态兜底），新增内置 github520 快照兜底（首装断网可用）\n4. CI build.yml tag 格式校验 ^v\\d+\\.\\d+\\.\\d+$\n测试：pytest 106 passed"
-}
