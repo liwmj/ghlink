@@ -49,8 +49,8 @@
 
 - 🔍 **三层探测**：TCP 443 建连 → TLS 握手（SNI）→ HTTP HEAD，真实反映 GitHub 可用性
 - 🔄 **自动自愈**：连续 3 轮失败（默认）触发切换，写入新 IP 后自检，失败立即回滚
-- 🌐 **多源 IP 获取**：阿里/腾讯/Cloudflare/Google 四个 DoH 源 + 系统 DNS + 本地缓存，多数票 + TCP 443 预检，单源故障自动剔除
-- 🧠 **目标域名健康度管理**（v0.2）：非核心域名（如 codeload/fastly）长期不可达自动降级，从判定/自检集剔除，核心域名（github.com / api.github.com）永不降级优先保证切换成功；恢复后自动重新纳入
+- 🌐 **多源 IP 获取**：阿里/腾讯/Cloudflare/Google 四个 DoH 源 + 系统 DNS + 本地缓存 + GitHub520 社区列表，多数票 + TCP 443 预检，单源故障自动剔除；**动态解析失败自动回退 GitHub520 静态列表**（v0.4.0：首装全量写，预检过排前）
+- 🧠 **目标域名健康度管理**（v0.2 + v0.4.0）：非核心域名（如 codeload/fastly）长期不可达自动降级——**降级不从 hosts 删除，改用 GitHub520 静态 IP 兜底**（v0.4.0 李工定），动态恢复后自动重新纳入；核心域名（github.com / api.github.com）永不降级优先保证切换成功
 - 🛡️ **安全红线**：写入前备份 hosts、写入后自检、自检失败回滚——**宁可不变，不能改坏**
 - ⏱️ **冷却防抖**：切换成功后 15 分钟冷却期，避免 IP 抖动导致频繁切换
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
@@ -73,7 +73,9 @@ flowchart LR
     B -->|正常| A
 ```
 
-**状态机**：`normal → switching → verifying → normal`，异常路径进入 `degraded`（只告警不破坏）。
+**状态机**：`normal → switching → verifying → normal`，异常路径进入 `degraded`。
+
+**v0.4.0 降级语义（李工 2026-08-22 定）**：动态解析失败但有 GitHub520 静态兜底 → **仍写静态段**（首装/断网场景 hosts 必有可用条目）；动态失败且无任何兜底候选 → 才不写、保持系统默认 DNS（宁缺毋滥，只告警不破坏）。
 
 ---
 
@@ -229,9 +231,16 @@ python -m ghlink.main config.json
 
 **Windows（任务计划程序）**：创建基本任务 → 触发器设为「重复任务间隔 1 小时」→ 操作设为 `python C:\ghlink\src\ghlink\main.py C:\ghlink\config.json`，勾选「使用最高权限运行」。
 
-### GitHub520 社区 IP 集成（v0.2.18）
+### GitHub520 社区 IP 集成（v0.2.18 + v0.4.0）
 
-ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社区 hosts（默认 1 小时刷新），为非核心 GitHub 域名（raw/objects/gist 等）补充社区 IP，覆盖自愈盲区。**核心域名（github.com/api.github.com）永远由 ghlink 自愈动态验证兜底**，社区 IP 只补非核心盲区、写入前做 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存。
+ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社区 hosts（默认 1 小时刷新），为非核心 GitHub 域名（raw/objects/gist 等）补充社区 IP，覆盖自愈盲区。
+
+**v0.4.0 语义（李工 2026-08-22 三点定）**：
+- **首装全量写**：enable/首次 run 初始化时写入 GitHub520 全量 IP（含核心域名静态兜底，预检过的排前——hosts 取首个命中），后续轮次才走动态优化
+- **降级用静态 IP 兜底不删除**：非核心域名动态降级后保留 GitHub520 静态段，动态恢复自动加回
+- **动态失败仍写静态段**：DoH 全源失败但有 GitHub520 兜底时照写，不再空手 degraded
+- **内置快照兜底**：拉取失败且缓存空时用内置最新快照（首装断网也能直接用）
+- 写入前 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存 → 内置快照
 
 ---
 
@@ -250,7 +259,7 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 | `github520` | `enabled` | true | GitHub520 社区 IP 集成开关（v0.2.18） |
 | `github520` | `url` | raw.hellogithub.com/hosts | 社区 hosts 拉取源 |
 | `github520` | `refresh_min` | 60 | 社区 IP 刷新周期（1 小时） |
-| `github520` | `core_first` | true | 核心域名 ghlink 自愈优先（社区 IP 只补非核心盲区） |
+| `github520` | `core_first` | true | 核心域名 ghlink 自愈优先（v0.4.0：首装含核心域名静态兜底，动态成功时动态段优先） |
 | `resolver` | `doh_sources` | 阿里/腾讯/CF/Google | DoH 源 URL 列表 |
 | `resolver` | `cache_ttl_sec` | 3600 | 本地 IP 缓存有效期 |
 | `resolver` | `max_candidates` | 5 | 候选 IP 上限 |
@@ -267,7 +276,7 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 | 1 | 降级（提权失败 / 写入失败 / 自检失败回滚 / 无可用 IP / 告警触发） |
 | 2 | 配置 / 参数错误 |
 
-**降级语义**：任何失败都不破坏现有 hosts（要么不写，要么写了自检不过立即回滚），只记录状态并可选告警。
+**降级语义（v0.4.0）**：动态失败但有 GitHub520 静态兜底 → 写静态段（首装/断网可用）；无任何可用候选才不写——任何写入都经 TCP 预检，自检不过立即回滚，只记录状态并可选告警。
 
 ---
 
@@ -327,7 +336,9 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 - [x] **v0.1.0**（2026-08-13）：核心自愈闭环 + 三平台单测全绿 + 双平台真机冒烟
 - [x] **v0.2.0**（2026-08-14）：目标域名健康度管理（长期不可达域名自动降级，核心域名优先切换）+ 三平台真机冒烟闭环 + 生产就绪（Production/Stable）
 - [x] **v0.2.1**（2026-08-14）：默认不自启（李工定规）+ 平台安装包发布（Windows installer / macOS brew / Linux deb）
-- [ ] **v0.3.x**：历史切换统计与报表
+- [x] **v0.3.1**（2026-08-22）：deb 包内 Version 动态注入 + 版本号随 tag 同步（跟进人 Linux 回归发现修复）
+- [x] **v0.4.0**（2026-08-22，李工 12:35 三点 + 12:44 终裁）：首装全量写 GitHub520 兜底（含核心域名静态 IP，预检过排前）+ 降级保留静态 IP 不删除 + 多源回退链（DoH→GitHub520→内置快照）+ hosts 块前移优先命中 + 预存条目检测告警
+- [ ] **v0.4.x**：历史切换统计与报表
 
 ---
 
@@ -337,6 +348,8 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 - 2026-08-13：Windows 真机冒烟完成，三平台矩阵全绿
 - 2026-08-14：v0.2.0/v0.2.1 发布（目标域名健康度管理 + 默认不自启 + 多平台安装包）；三平台真机冒烟闭环
 - 2026-08-15：按 P-006 v1.21 对齐（ruff 代码规范 + CI 门禁 + README 徽章参数化/mermaid 原理图 + 测试矩阵）
+- 2026-08-22：v0.3.0 发布（4 位 tag 清理 + CI tag 3 位校验 + 三平台卸载删配置 + 内置 GitHub520 兜底）；v0.3.1 发布（deb Version 动态注入 + 版本号同步）；v0.4.0 开发（首装全量写兜底/降级保留静态 IP/hosts 块前移/多源回退链，李工 12:35 三点定调）
+- 2026-08-22：分支治理（GitHub Flow 合并即删铁律入信息表 v1.23，清理 23 个历史分支 + 2 个 stale PR）
 - 立项评估：A 级（优化 GitHub 网络链路，直接影响开发/同步效率与稳定性）
 
 ---
