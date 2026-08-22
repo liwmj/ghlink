@@ -86,13 +86,14 @@ def _update_state(st: Dict[str, Any], **fields: Any) -> None:
 
 
 def _github520_entries(cfg: Dict[str, Any], st: Dict[str, Any], st_dir: str) -> Dict[str, list]:
-    """GitHub520 静态兜底条目（v0.2.19 ③⑥ 语义）。
+    """GitHub520 静态兜底条目（v0.2.19 ③⑥ + v0.4.0 李工 12:35 点 1 语义）。
 
     规则：
-    - 初始化（state 无 github520_initialized 标记）：拉取一次并合入 hosts，置标记
+    - 初始化（state 无 github520_initialized 标记）：拉取一次并全量合入 hosts
+      （v0.4.0：含核心域名静态 IP 兜底，预检过的排前），置标记
     - 已初始化：从现有 hosts 保留子段（动态更新不重复拉取、不丢失兜底）
     - hosts 子段被清且缓存空：允许再拉一次恢复（鲁棒，不重置初始化语义）
-    核心域名（github.com/api.github.com）永远由 ghlink 动态自愈兜底，不写社区 IP。
+    核心域名（github.com/api.github.com）动态段优先（块前），静态 IP 兜底。
     """
     try:
         from . import github520 as g520
@@ -103,16 +104,16 @@ def _github520_entries(cfg: Dict[str, Any], st: Dict[str, Any], st_dir: str) -> 
             st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
             return preserved
 
-        # 2) 未初始化：拉取一次（成功才置标记）
+        # 2) 未初始化：全量拉取一次（含核心域名，v0.4.0 首装全量语义）
         if not st.get("github520_initialized"):
-            fetched = g520.sync_github520(cfg, st_dir)
+            fetched = g520.initial_entries(cfg, st_dir)
             if fetched:
                 st["github520_initialized"] = True
                 st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                 st["github520"]["domains"] = len(fetched)
                 return fetched
 
-        # 3) 已初始化但 hosts 子段被清：缓存兜底 → 缓存空再拉一次
+        # 3) 已初始化但 hosts 子段被清：缓存兜底 → 缓存空再拉一次（日常非全量）
         cached = g520.load_cached(st_dir)
         if cached:
             st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -153,12 +154,10 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         ok = probe.round_ok({h: r for h, r in results.items() if h in active})
 
         # 2) GitHub520 静态兜底：初始化合一次，后续保留现有子段（v0.2.19 ⑥）
+        # v0.4.0（李工 12:35 点 2）：降级域名不再从 github520 段剔除——
+        # 降级 = 动态段剔除，但保留 github520 静态 IP 兜底（动态恢复自动加回）
         st_dir = os.path.dirname(os.path.abspath(st_path)) if st_path else ""
         github520_entries = _github520_entries(cfg, st, st_dir)
-        # 降级域名不写入（与 active 判定一致：坏域名不入场，v0.2.18 语义保留）
-        for d in list(github520_entries.keys()):
-            if st.get("probe", {}).get("targets", {}).get(d, {}).get("degraded"):
-                del github520_entries[d]
 
         # 3) 解析活跃域名动态 IP（正常态也解析，保证 hosts 段常新）
         # v0.2.19.1（拂晓 Linux 严格测试 #2）：并行 resolve——8 域名串行
@@ -182,6 +181,21 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                     continue
                 entries[tgt] = cands
         if not ok_candidates or not entries:
+            # v0.4.0（李工 12:35 点 1）：动态解析失败但有 github520 静态兜底 → 仍写静态段，
+            # 不因动态失败就什么都不写（首装/断网场景保证 hosts 有可用条目）
+            if github520_entries:
+                block = hosts_manager.build_combined_block({}, github520_entries)
+                ok_apply, backup_path = hosts_manager.apply_block(
+                    block, _backup_dir(cfg, config_path)
+                )
+                st["state"] = "normal" if ok else "degraded"
+                st["last_error"] = (
+                    "dynamic resolver failed, github520 static fallback written"
+                )
+                st.setdefault("candidate_sources", {})["dynamic"] = "failed"
+                st["candidate_sources"]["github520"] = "ok"
+                state.save(st_path, st)
+                return 0
             if ok:
                 # v0.2.19（李工 8 条③）：正常态解析失败不降级——probe 网络本就通，
                 # hosts 段是优化不是必需（root 值守可补写），保持 normal 仅记录

@@ -158,7 +158,12 @@ class TestDomainHealth:
         assert st["probe"]["targets"]["api.github.com"]["degraded"] is False
 
     def test_h005_switch_only_active_domains(self, tmp_path, monkeypatch):
-        """触发切换时：活跃域名写入 hosts，降级域名不写入。"""
+        """触发切换时：活跃域名写入动态段，降级域名从动态段剔除。
+
+        v0.4.0（李工 12:35 点 2）：降级域名不再整体剔除——动态段剔除，
+        但 github520 静态段保留兜底（本测试 mock github520 为空，聚焦动态段语义；
+        静态段兜底由 test_h006 覆盖）。
+        """
         cfg_path = make_config(tmp_path)
         # 核心域名失败触发切换，codeload 已降级
         monkeypatch.setattr(
@@ -168,6 +173,10 @@ class TestDomainHealth:
             ),
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
+        # v0.4.0 测试隔离：mock github520 为空（避免真实拉取/内置快照干扰动态段断言）
+        monkeypatch.setattr("ghlink.github520.initial_entries", lambda cfg, sd: {})
+        monkeypatch.setattr("ghlink.github520.sync_github520", lambda cfg, sd: {})
+        monkeypatch.setattr("ghlink.hosts_manager.current_g520_entries", lambda: {})
         blocks = []
         monkeypatch.setattr(
             "ghlink.hosts_manager.apply_block",
@@ -186,5 +195,5 @@ class TestDomainHealth:
             main.run(cfg_path)
         assert blocks, "应至少触发一次切换"
         last = blocks[-1]
-        assert "codeload.github.com" not in last  # 降级域名不写入
+        assert "codeload.github.com" not in last  # 降级域名不写入动态段
         assert "github.com" in last and "api.github.com" in last  # 核心域名写入

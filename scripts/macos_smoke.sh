@@ -54,7 +54,7 @@ trap restore_hosts EXIT
 TMP=$(mktemp -d /tmp/ghlink-smoke.XXXXXX)
 cat > "$TMP/config.json" << EOF
 {
-  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 5,
+  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 15,
             "core_targets": ["github.com", "api.github.com"], "degrade_after_rounds": 10, "recover_rounds": 2},
   "trigger": {"consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2},
   "resolver": {"doh_sources": ["https://dns.alidns.com/resolve", "https://doh.pub/dns-query", "https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"], "cache_ttl_sec": 3600, "max_candidates": 5},
@@ -90,9 +90,9 @@ before=$(shasum "$HOSTS" | cut -d' ' -f1)
 $RUN >/dev/null 2>&1; rc=$?
 after=$(shasum "$HOSTS" | cut -d' ' -f1)
 [ "$rc" -eq 0 ] && ok "① 正常路径 EXIT 0" || bad "① 正常路径 EXIT=$rc"
-# v0.3.1（李工 8 条③）：正常态也写 hosts 段（保证全局访问生效），
+# v0.4.0（李工 8 条③）：正常态也写 hosts 段（保证全局访问生效），
 # 不再「零改动」；断言改为 ghlink 段落已写入 + 无 127.0.0.1 坏 IP
-grep -q "ghlink Start" "$HOSTS" && ok "① hosts 含 ghlink 段（v0.3.1 常态写入）" || bad "① hosts 缺 ghlink 段"
+grep -q "ghlink Start" "$HOSTS" && ok "① hosts 含 ghlink 段（v0.4.0 常态写入）" || bad "① hosts 缺 ghlink 段"
 ! grep -q "^127.0.0.1 github.com" "$HOSTS" && ok "① hosts 无坏 IP" || bad "① hosts 残留坏 IP"
 
 # ② 切换链路：注入 127.0.0.1 → 连续失败 3 轮 → 切换写入真实 IP → 自检通过
@@ -150,7 +150,7 @@ $RUN >/dev/null 2>&1; rc=$?
 # ⑤ 冷却防抖：切换成功后冷却期内再失败 → 不重复切换
 cat > "$TMP/cool.json" << EOF
 {
-  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 5},
+  "probe": {"targets": ["github.com", "api.github.com"], "timeout_sec": 15},
   "trigger": {"consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2},
   "resolver": {"doh_sources": ["https://dns.alidns.com/resolve", "https://doh.pub/dns-query", "https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"], "cache_ttl_sec": 3600, "max_candidates": 5},
   "notify": {"enabled": false, "feishu_webhook": ""},
@@ -173,7 +173,7 @@ for i in 1 2 3; do
   $RUN_COOL >/dev/null 2>&1
 done
 h2=$(python3 -c "import json;print(len(json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
-# v0.3.1：常态刷新（periodic refresh）也会进 history，冷却期只防
+# v0.4.0：常态刷新（periodic refresh）也会进 history，冷却期只防
 # 「consecutive failures 切换」重复触发——按 trigger 类型断言
 trig=$(python3 -c "import json;print(','.join(h.get('trigger','') for h in json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
 case "$trig" in

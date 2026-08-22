@@ -14,7 +14,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
-from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.3.1：首装断网/拉取失败兜底
+from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.4.0：首装断网/拉取失败兜底
 
 # 拉取状态缓存文件（放 state 同目录）
 _CACHE_NAME = "ghlink520_cache.json"
@@ -29,7 +29,7 @@ def _cache_path(state_dir: str = "") -> str:
 
 def fetch_hosts(url: str, timeout_sec: float = 30) -> str:
     """拉取 GitHub520 hosts 文本（失败抛异常，由调用方降级）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.3.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.4.0"})
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
@@ -123,24 +123,43 @@ def save_cache(entries: Dict[str, List[str]], state_dir: str = "") -> None:
 
 
 def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]]:
-    """拉取 + 解析 + 抽检 + 缓存；失败回退缓存。返回 {domain: [ips]}。
+    """日常轮次：拉取 + 解析 + 抽检 + 缓存；失败回退缓存/内置快照。
 
-    返回值只含「非核心域名」的社区 IP——核心域名（github.com/api.github.com）
-    永远由 ghlink 自愈动态验证兜底，不写死 GitHub520 静态 IP。
+    返回非核心域名的社区 IP（核心域名由动态自愈优先，不写死静态 IP）。
     """
+    return _sync(cfg, state_dir, include_core=False)
+
+
+def initial_entries(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]]:
+    """首装全量兜底（v0.4.0 新增，李工 12:35 点 1）：含全部域名（含核心），
+    预检过的 IP 排前、未预检的排后——首装/动态失败时 hosts 必有可用条目。
+    """
+    return _sync(cfg, state_dir, include_core=True, full_write=True)
+
+
+def _sync(
+    cfg: Dict[str, Any],
+    state_dir: str = "",
+    include_core: bool = False,
+    full_write: bool = False,
+) -> Dict[str, List[str]]:
+    """核心同步逻辑。include_core=保留核心域名；full_write=全量写（预检过排前）。"""
     g = cfg.get("github520", {})
     if not g.get("enabled", True):
         return {}
     url = g.get("url", "https://raw.hellogithub.com/hosts")
     timeout_sec = float(g.get("timeout_sec", 30))
-    # 核心域名排除（自愈优先）
     core = set(cfg.get("probe", {}).get("core_targets", ["github.com", "api.github.com"]))
 
     try:
         text = fetch_hosts(url, timeout_sec)
         entries = parse_hosts(text)
-        entries = {d: ips for d, ips in entries.items() if d not in core}
-        entries = filter_reachable(entries)
+        if not include_core:
+            entries = {d: ips for d, ips in entries.items() if d not in core}
+        if full_write:
+            entries = _sort_prechecked_first(entries, min(timeout_sec, 5.0))
+        else:
+            entries = filter_reachable(entries)
         if entries:
             save_cache(entries, state_dir)
             return entries
@@ -150,11 +169,27 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
     cached = load_cached(state_dir)
     if cached:
         return {d: ips for d, ips in cached.items() if d not in core}
-    # v0.3.1（李工 2026-08-22 定）：缓存也空 → 内置快照兜底（防首装断网尴尬）
+    # 内置快照兜底（防首装断网尴尬）
     builtin = parse_hosts(BUILTIN_GITHUB520_HOSTS)
-    builtin = {d: ips for d, ips in builtin.items() if d not in core}
-    builtin = filter_reachable(builtin)
+    if not include_core:
+        builtin = {d: ips for d, ips in builtin.items() if d not in core}
+    if full_write:
+        builtin = _sort_prechecked_first(builtin, min(timeout_sec, 5.0))
+    else:
+        builtin = filter_reachable(builtin)
     if builtin:
         save_cache(builtin, state_dir)
         return builtin
     return {}
+
+
+def _sort_prechecked_first(
+    entries: Dict[str, List[str]], timeout_sec: float = 5.0
+) -> Dict[str, List[str]]:
+    """v0.4.0：全量写入时预检过的 IP 排前、未预检的排后（hosts 取首个命中）。"""
+    out: Dict[str, List[str]] = {}
+    for domain, ips in entries.items():
+        ok_ips = [ip for ip in ips if _ip_reachable(ip, timeout_sec)]
+        rest = [ip for ip in ips if ip not in ok_ips]
+        out[domain] = ok_ips + rest
+    return out

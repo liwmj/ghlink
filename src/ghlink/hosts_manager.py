@@ -149,15 +149,19 @@ def apply_block(
                 sub = f"\n{G520_START}{g520}{G520_END}"
                 block = block[:end_pos] + sub + block[end_pos:]
 
-    # 替换旧段落（幂等：无论旧段落是否存在）
+    # v0.4.0（李工 12:35 点 3）：段落插到文件最前优先命中（first-match-wins），
+    # 避免用户预存条目在段落前遮蔽 ghlink 写入；段落外内容零改动
     start = content.find(START_MARK)
     end = content.find(END_MARK)
     if start != -1 and end != -1 and end > start:
         before = content[:start]
         after = content[end + len(END_MARK) :]
         content = before + block + after
+        # 若段落不在文件最前（前面还有非空内容），把段落提前到最前
+        if before.strip():
+            content = block + "\n" + before + after
     elif start == -1 and end == -1:
-        content = content.rstrip("\n") + "\n" + block
+        content = block + "\n" + content.rstrip("\n") + "\n"
     else:
         # 段落标记不完整，视为异常：整体重建安全内容
         return False, ""
@@ -174,6 +178,35 @@ def apply_block(
         return False, ""
     platform_adapter.flush_dns()
     return True, backup
+
+
+def detect_external_dupes(path: str = "") -> Dict[str, str]:
+    """v0.4.0（李工 12:35 点 3）：检测段落外预存的 GitHub 生态域名条目。
+
+    返回 {domain: "ip"}——用户在 ghlink 块之外已配置的条目，
+    first-match-wins 下可能与 ghlink 写入冲突。enable 时调用，命中则告警+备份。
+    """
+    path = path or platform_adapter.get_hosts_path()
+    content = _read_hosts(path)
+    # 剔除 ghlink 段落（含 ghlink520 子段）
+    start = content.find(START_MARK)
+    end = content.find(END_MARK)
+    if start != -1 and end != -1 and end > start:
+        content = content[:start] + content[end + len(END_MARK) :]
+    out: Dict[str, str] = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        ip, domain = parts[0], parts[1].rstrip(".")
+        if domain.endswith(
+            (".github.com", "github.com", "githubusercontent.com", "githubassets.com", "fastly.net")
+        ):
+            out.setdefault(domain, ip)
+    return out
 
 
 def verify_after_apply(targets: List[str], timeout_sec: float) -> bool:
