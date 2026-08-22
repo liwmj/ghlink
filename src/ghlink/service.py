@@ -136,7 +136,11 @@ def enable() -> int:
                 print(f"  - {d} -> {ip}")
             if len(dupes) > 10:
                 print(f"  ... 等共 {len(dupes)} 条")
-            backup = platform_adapter.backup_hosts()
+            # v0.4.2（拂晓复测发现）：backup_hosts 默认 "backup" 相对 cwd → 落点漂移。
+            # 改为按 config 目录解析平台化路径（与状态/锁文件同源，main._backup_dir 同语义）
+            cfg_path = _config_path()
+            backup_dir = os.path.join(os.path.dirname(os.path.abspath(cfg_path)), "backup")
+            backup = platform_adapter.backup_hosts(backup_dir)
             print(
                 f"[ghlink] 已自动备份原 hosts（{backup or '备份失败'}），"
                 "用户记录未改动；如需自定义请编辑后重新 enable"

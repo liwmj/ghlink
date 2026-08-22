@@ -160,8 +160,23 @@ def flush_dns() -> bool:
     return False
 
 
-def backup_hosts(backup_dir: str = "backup") -> str:
-    """写入前备份 hosts，返回备份文件路径；失败返回空字符串。"""
+def _default_backup_dir() -> str:
+    """v0.4.2（拂晓复测发现）：备份目录平台化默认——与状态/锁文件同源，
+    杜绝 backup_hosts 默认相对路径依赖 cwd 导致落点漂移。"""
+    if sys.platform == "win32":
+        return os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink", "backup")
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return "/var/lib/ghlink/backup"
+    return os.path.join(os.path.expanduser("~"), ".ghlink", "backup")
+
+
+def backup_hosts(backup_dir: str = "") -> str:
+    """写入前备份 hosts，返回备份文件路径；失败返回空字符串。
+
+    v0.4.2：backup_dir 空 → 用平台化默认目录（_default_backup_dir），不再相对 cwd。
+    """
+    if not backup_dir:
+        backup_dir = _default_backup_dir()
     hosts = get_hosts_path()
     if not os.path.exists(hosts):
         return ""
