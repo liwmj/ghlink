@@ -242,6 +242,12 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 - **内置快照兜底**：拉取失败且缓存空时用内置最新快照（首装断网也能直接用）
 - 写入前 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存 → 内置快照
 
+**hosts 段落管理（v0.4.0，李工 12:35 点 3）**：
+- ghlink 全部修改收敛在独立段落 `# ghlink Start/End`（含 `# ghlink520` 子段），段落外内容零改动，不影响用户其他 DNS 配置
+- **段落插到 hosts 文件最前**（first-match-wins 优先命中），避免用户预存条目在段落前遮蔽 ghlink 写入
+- **预存条目冲突检测**：enable 时扫描段落外 GitHub 生态域名预存条目 → 命中则告警 + 自动备份原 hosts（hosts_backup_dir），用户记录不动
+- **卸载即恢复**：卸载/disable 移除 ghlink 段落即恢复原状（备份可回滚）
+
 ---
 
 ## 配置说明
