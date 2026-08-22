@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 
@@ -45,9 +45,9 @@ EOF
 chmod 0755 "$BUILD_DIR/usr/bin/ghlink"
 
 # 4. 默认配置 + 示例
-# v0.3.0.1（拂晓 Linux 严格测试 #3）：config.example.json 为平台无关相对路径
+# v0.3.1.1（拂晓 Linux 严格测试 #3）：config.example.json 为平台无关相对路径
 # （修 Windows 模板），deb 安装必须用绝对路径模板——否则状态文件从 /var/lib/ghlink/
-# 漂移到 /etc/ghlink/，0.2.17→0.3.0 升级用户"失忆"（旧心跳/历史全断）。
+# 漂移到 /etc/ghlink/，0.2.17→0.3.1 升级用户"失忆"（旧心跳/历史全断）。
 # 这里复制后用 sed 把相对路径字段改写为 /var/lib/ghlink/ 绝对路径。
 cp config.example.json "$BUILD_DIR/usr/share/ghlink/config.example.json"
 _abs_template() {
