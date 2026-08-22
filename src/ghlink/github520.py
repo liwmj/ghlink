@@ -14,7 +14,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
-from .builtin_github520 import BUILTIN_GITHUB520  # v0.3.0：首装断网/拉取失败兜底
+from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.3.0：首装断网/拉取失败兜底
 
 # 拉取状态缓存文件（放 state 同目录）
 _CACHE_NAME = "ghlink520_cache.json"
@@ -151,7 +151,8 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
     if cached:
         return {d: ips for d, ips in cached.items() if d not in core}
     # v0.3.0（李工 2026-08-22 定）：缓存也空 → 内置快照兜底（防首装断网尴尬）
-    builtin = {d: ips for d, ips in BUILTIN_GITHUB520.items() if d not in core}
+    builtin = parse_hosts(BUILTIN_GITHUB520_HOSTS)
+    builtin = {d: ips for d, ips in builtin.items() if d not in core}
     builtin = filter_reachable(builtin)
     if builtin:
         save_cache(builtin, state_dir)
