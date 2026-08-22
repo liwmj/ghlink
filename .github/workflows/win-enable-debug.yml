@@ -1,8 +1,8 @@
-name: Win enable debug (v0.2.19 ⑧)
+name: Win enable debug (v0.3.0 ⑧)
 
 on:
   push:
-    branches: [fix/v0.2.19-eight]
+    branches: [fix/v0.3.0-eight]
   workflow_dispatch:
 
 permissions:
