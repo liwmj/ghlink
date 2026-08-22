@@ -60,7 +60,11 @@ class TestFullCycle:
         assert state["probe"]["consecutive_failures"] == 0
 
     def test_e002_success_resets_counter_no_trigger(self, tmp_path, monkeypatch):
-        """失败 2 轮后成功 1 轮 → 计数清零，不触发切换。"""
+        """失败 2 轮后成功 1 轮 → 计数清零，不触发故障切换。
+
+        v0.2.19（李工 8 条③）：正常态也写 hosts（段落常新），applied 非空是预期；
+        「不触发」= history 无 consecutive failures 触发、计数清零。
+        """
         cfg_path = make_config(tmp_path)
         calls = {"n": 0}
 
@@ -76,9 +80,17 @@ class TestFullCycle:
             "ghlink.hosts_manager.apply_block",
             lambda block, backup_dir: applied.append(block) or (True, backup_dir),
         )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
         for _ in range(4):
             main.run(cfg_path)
-        assert applied == []  # 从未触发切换
+        assert applied, "v0.2.19：正常态也维护 hosts 段（段落常新）"
+        st = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert st["state"] == "normal"
+        assert st["probe"]["consecutive_failures"] == 0  # 成功轮清零
+        triggers = [h.get("trigger", "") for h in st.get("history", [])]
+        assert not any("consecutive failures" in t for t in triggers), f"无故障触发: {triggers}"
 
     def test_e004_all_sources_fail_keeps_config_degraded(self, tmp_path, monkeypatch):
         """全源失败 → 不换配置 + 告警 + degraded。"""
@@ -136,6 +148,94 @@ class TestFullCycle:
         monkeypatch.setattr("ghlink.notifier.send", lambda message, url: False)  # 告警失败
         code = main.run(cfg_path)
         assert code in (0, 1)  # 不因告警失败而崩
+
+    def test_e008_degraded_recovers_when_probe_ok(self, tmp_path, monkeypatch):
+        """Bug E：degraded 状态 + 探测成功 → 回绿 normal（不再卡死）。"""
+        cfg_path = make_config(tmp_path)
+        # 预置 degraded 状态文件
+        st = {
+            "schema_version": 2,
+            "state": "degraded",
+            "last_error": "verify failed after apply, rolled back",
+            "probe": {
+                "targets": {
+                    t: {"ok": False, "fail_count": 99, "degraded": False, "recover_count": 0}
+                    for t in ["github.com", "api.github.com"]
+                },
+                "consecutive_failures": 0,
+            },
+        }
+        (tmp_path / "state.json").write_text(json.dumps(st), encoding="utf-8")
+        # 本轮探测成功
+        monkeypatch.setattr(
+            "ghlink.probe.probe_all",
+            lambda targets, timeout: {
+                t: {"ok": True, "latency_ms": 10, "error": None} for t in targets
+            },
+        )
+        # 拂晓 Linux 复验（2026-08-21 19:31）：e008 原未 mock resolver/apply/verify，
+        # 走真实网络 + 真实 hosts 写入 → 偶发失败（网络抖动/权限差异）。
+        # 补 mock 保证确定性：v0.2.19 正常态也写 hosts，全部打桩。
+        monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
+        )
+        code = main.run(cfg_path)
+        assert code == 0
+        state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert state["state"] == "normal"  # degraded → normal 恢复
+        assert state.get("last_error") is None
+
+    def test_e009_verify_only_core_targets(self, tmp_path, monkeypatch):
+        """Bug E 点3：verify 只验证 core_targets ∩ 写入域名，fastly 不可达不拖累回滚。"""
+        cfg = {
+            "probe": {
+                "targets": ["github.com", "api.github.com", "github.global.ssl.fastly.net"],
+                "core_targets": ["github.com", "api.github.com"],
+                "timeout_sec": 5,
+            },
+            "trigger": {"consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2},
+            "resolver": {"doh_sources": [], "cache_ttl_sec": 3600, "max_candidates": 5},
+            "notify": {"enabled": True, "feishu_webhook": ""},
+            "state_file": str(tmp_path / "state.json"),
+            "lock_file": str(tmp_path / "ghlink.lock"),
+            "hosts_backup_dir": str(tmp_path / "backup"),
+        }
+        p = tmp_path / "config.json"
+        p.write_text(json.dumps(cfg), encoding="utf-8")
+        cfg_path = str(p)
+        # 核心域名失败、fastly 也失败（触发切换）
+        monkeypatch.setattr(
+            "ghlink.probe.probe_all",
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
+        )
+        # resolve：核心域名有候选，fastly 也有候选（会被写入 hosts）
+        monkeypatch.setattr(
+            "ghlink.resolver.resolve_best",
+            lambda domain, cfg: ["1.2.3.4"] if "fastly" not in domain else ["5.6.7.8"],
+        )
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+        )
+        # 关键断言：verify 收到的 targets 只含 core_targets（不含 fastly）
+        verify_calls = []
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.verify_after_apply",
+            lambda targets, timeout: verify_calls.append(list(targets)) or True,
+        )
+        for _ in range(3):
+            main.run(cfg_path)
+        assert verify_calls, "verify_after_apply 应被调用"
+        last_verify = verify_calls[-1]
+        assert "github.global.ssl.fastly.net" not in last_verify, (
+            f"verify 不应含 fastly: {last_verify}"
+        )
+        assert "github.com" in last_verify and "api.github.com" in last_verify
 
     def test_privilege_failure_state_saved(self, tmp_path, monkeypatch):
         """提权失败路径：state 仍落盘当前状态（switching 标记不丢），不静默（赛博复核提醒 2）。"""

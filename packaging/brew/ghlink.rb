@@ -9,8 +9,8 @@
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.1.tar.gz"
-  sha256 "4a197fc20b05f5315393ed04bc5f86732865998baca43e5474f137781d94ed6a"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.8.tar.gz"
+  sha256 "65b01fb3f1fe05292c42345bad9f7504bd66173875c32d3d3de6b173c353c247"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
 
@@ -21,6 +21,10 @@ class Ghlink < Formula
     (libexec/"ghlink").install Dir["src/ghlink/*.py"]
     libexec.install "config.example.json"
 
+    # v0.2.17（李工 21:47 定）：托盘图标必须用 LOGO——补装 assets 图标
+    # 到 libexec/assets/（_icon_path 已加 brew 路径候选），避免纯色回退
+    (libexec/"assets").install "assets/ghlink-icon.png"
+
     # 托盘依赖（pystray + Pillow）仅注入安装包：pip 装到 libexec/vendor，核心源码保持零依赖
     py = Formula["python@3.12"].opt_bin/"python3.12"
     system py, "-m", "pip", "install", "--target", libexec/"vendor", "--quiet", "pystray", "Pillow"
@@ -29,23 +33,20 @@ class Ghlink < Formula
     (bin/"ghlink").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}:#{libexec}/vendor"
-      exec "#{py}" -c "from ghlink.main import main; import sys; sys.exit(main())" "$@"
+      exec "#{py}" -m ghlink.main "$@"
     EOS
     chmod 0755, bin/"ghlink"
 
     # 配置目录（默认不自启，enable 时才注册系统 LaunchDaemon）
+    # v0.2.19（李工 8 条⑦）：config 模板直接同步 config.example.json（8 域名），
+    # 不再手写硬编码旧模板（旧模板只有 2 域名，与最新配置脱节）
+    # v0.3.0（李工 2026-08-22 定）：换版本删旧配置——install 前清掉旧 config，
+    # 用最新模板重建默认配置，避免旧字段不兼容
     (etc/"ghlink").mkpath
-    (etc/"ghlink/config.json").write <<~EOS unless File.exist?(etc/"ghlink/config.json")
-      {
-        "probe": { "targets": ["github.com", "api.github.com"], "timeout_sec": 5 },
-        "trigger": { "consecutive_failures": 3, "cooldown_min": 15, "verify_success_rounds": 2 },
-        "resolver": { "doh_sources": [], "cache_ttl_sec": 3600, "max_candidates": 5 },
-        "notify": { "enabled": false },
-        "state_file": "/var/lib/ghlink/ghlink_status.json",
-        "lock_file": "/var/lib/ghlink/ghlink.lock",
-        "hosts_backup_dir": "/var/lib/ghlink/backup"
-      }
-    EOS
+    old_cfg = etc/"ghlink/config.json"
+    old_cfg.delete if old_cfg.exist?
+    tmpl = libexec/"config.example.json"
+    (etc/"ghlink/config.json").write(tmpl.read) if tmpl.exist?
   end
 
   def caveats

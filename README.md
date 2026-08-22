@@ -56,7 +56,7 @@
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
 - 🔔 **多渠道告警**：切换、降级、回滚事件实时通知（飞书 / 钉钉 / 企业微信 / Telegram / 通用 Webhook 可配），冷却期去重，发送失败不阻断主流程
 - 💻 **跨平台**：macOS / Windows / Linux 一套代码，平台差异收敛到单一适配层
-- 📦 **零第三方依赖**：纯 Python 标准库实现，`pip install` 都不需要
+- 📦 **零第三方依赖**：纯 Python 标准库实现，运行无需任何第三方包
 
 ---
 
@@ -102,15 +102,16 @@ src/ghlink/
 
 ---
 
-## 默认行为（托盘 = 值守总开关）
+## 默认行为（值守独立于托盘，2026-08-17 李工新口径）
 
-ghlink 的语义模型（2026-08-16 李工定调）：
+ghlink 的语义模型（替代 2026-08-16 版「托盘=值守总开关」）：
 
-- **开机启动**：登录时自动拉起托盘（Windows Run 键 → ghlink-tray.exe），托盘随登录出现。
-- **托盘 = 值守总开关**：托盘运行即值守生效（1 分钟粒度后台探测 + 自愈）。托盘启动时若值守未启用会自动开启（管理员授权一次）；托盘退出会同时停用值守（含确认提示）。
-- **值守 enable**：底层是系统定时任务（Windows schtasks / SYSTEM 权限，无窗口静默运行），由托盘统一管理开关。
+- **值守独立于托盘**：`ghlink enable` 注册平台定时任务（1 分钟粒度后台探测 + 自愈）即开启值守，**不启动托盘也能值守**（命令行模式）。
+- **托盘 = UI 载体**：托盘用于展示状态（图标颜色/菜单）与便捷操作（复制 IP/开关自启）。启动/退出托盘不改变值守状态，值守由 enable 独立管理。
+- **Windows 便捷联动**（启动逻辑层面，非代码逻辑）：为方便 Windows 用户，启动托盘时同步启动值守；退出托盘时同步退出值守。Windows 托盘在 ⇒ 值守在（联动行为）；命令行 `ghlink enable` 仍可独立值守。
+- **值守 enable**：底层是系统定时任务（Windows schtasks / macOS LaunchDaemon / Linux systemd timer，1 分钟粒度），`ghlink enable` 注册、`ghlink disable` 移除、`ghlink status` 查看。
 
-关键语义：**托盘在 = 守护在；托盘不在 = 守护停**。手动开托盘即启用值守；安装时默认不自启（需手动勾选「开机自动启动托盘并启用值守」）。
+关键语义：**值守在 = 平台任务注册 + 心跳正常**；托盘只是显示器，不是开关。安装后默认不自启（需手动 `ghlink enable` 或勾选「开机自动启动托盘」）。
 
 ## 快速开始
 
@@ -124,8 +125,13 @@ ghlink 的语义模型（2026-08-16 李工定调）：
 **macOS（Homebrew tap，推荐）**
 
 ```bash
+# 方式一：信任 tap 后安装（Homebrew 4.x 起第三方 tap 默认不可信，必须先 trust）
 brew tap liwmj/ghlink
+brew trust liwmj/ghlink        # 或 brew trust --formula liwmj/ghlink/ghlink
 brew install ghlink
+
+# 方式二：若已 tap 但 install 报 Refusing to load formula ... untrusted tap
+brew trust --formula liwmj/ghlink/ghlink && brew install ghlink
 ```
 
 **Windows（安装向导 / 裸 exe）**
@@ -141,13 +147,21 @@ brew install ghlink
 **Linux（apt / .deb）**
 
 ```bash
-# 方式一：apt 仓库（Debian/Ubuntu）
-echo "deb [trusted=yes] https://github.com/liwmj/ghlink/releases/download/vX.Y.Z/ ./" | sudo tee /etc/apt/sources.list.d/ghlink.list
+# 方式一：apt 仓库（Debian/Ubuntu，v0.2.18 起用 Pages 固定 URL，写一次永久生效）
+echo "deb [trusted=yes] https://liwmj.github.io/ghlink/apt/ ./" | sudo tee /etc/apt/sources.list.d/ghlink.list
 sudo apt update && sudo apt install ghlink
+# 以后每版发完直接 sudo apt upgrade 拿最新，无需改 sources.list
 
 # 方式二：.deb 直接安装
-wget https://github.com/liwmj/ghlink/releases/download/vX.Y.Z/ghlink_X.Y.Z-1_all.deb
+wget https://github.com/liwmj/ghlink/releases/download/v0.2.18/ghlink_0.2.18-1_all.deb
 sudo dpkg -i ghlink_*.deb
+```
+
+**PyPI（任意系统，发布打通后生效）**
+
+```bash
+# PyPI 发布打通后可直接安装（当前版本请优先使用上方各平台安装包）
+pip install ghlink
 ```
 
 **源码（任意系统，零第三方依赖）**
@@ -183,15 +197,15 @@ python -m ghlink.main config.json
 ### 默认行为（v0.2.x）
 
 - **安装后默认不自启**（2026-08-14 李工定规）：不注册值守任务、托盘不随登录启动
-- **开启自启**：托盘右键菜单「启用值守」开关，或命令行 `ghlink enable`（注册 1 分钟粒度定时任务）
+- **开启自启**：托盘右键菜单「启用值守」开关，或命令行 `ghlink enable`（注册 1 小时粒度定时任务，v0.2.18 起）
 - **关闭自启**：托盘右键「停用值守」，或 `ghlink disable`
 - 托盘（Windows/macOS）：状态图标/悬停摘要/右键开关/气泡通知；Linux 为纯 CLI
 
-### 定时调度（1 分钟粒度）
+### 定时调度（1 小时粒度，v0.2.18 起）
 
 **Linux（crontab）**：
 ```bash
-* * * * * cd /opt/ghlink && sudo python3 -m ghlink.main config.json >> /var/log/ghlink.log 2>&1
+0 * * * * cd /opt/ghlink && sudo python3 -m ghlink.main config.json >> /var/log/ghlink.log 2>&1
 ```
 
 **macOS（launchd）**：
@@ -207,13 +221,17 @@ python -m ghlink.main config.json
         <string>/opt/ghlink/src/ghlink/main.py</string>
         <string>/opt/ghlink/config.json</string>
     </array>
-    <key>StartInterval</key><integer>60</integer>
+    <key>StartInterval</key><integer>3600</integer>
     <key>RunAtLoad</key><true/>
 </dict>
 </plist>
 ```
 
-**Windows（任务计划程序）**：创建基本任务 → 触发器设为「重复任务间隔 1 分钟」→ 操作设为 `python C:\ghlink\src\ghlink\main.py C:\ghlink\config.json`，勾选「使用最高权限运行」。
+**Windows（任务计划程序）**：创建基本任务 → 触发器设为「重复任务间隔 1 小时」→ 操作设为 `python C:\ghlink\src\ghlink\main.py C:\ghlink\config.json`，勾选「使用最高权限运行」。
+
+### GitHub520 社区 IP 集成（v0.2.18）
+
+ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社区 hosts（默认 1 小时刷新），为非核心 GitHub 域名（raw/objects/gist 等）补充社区 IP，覆盖自愈盲区。**核心域名（github.com/api.github.com）永远由 ghlink 自愈动态验证兜底**，社区 IP 只补非核心盲区、写入前做 TCP 可达性抽检防坏 IP 入场；拉取失败自动回退本地缓存。
 
 ---
 
@@ -221,14 +239,18 @@ python -m ghlink.main config.json
 
 | 配置段 | 字段 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `probe` | `targets` | github.com 等 4 域名 | 探测域名清单 |
-| `probe` | `timeout_sec` | 5 | 单域名探测超时 |
+| `probe` | `targets` | github.com 等 8 域名 | 探测域名清单（v0.2.18 扩域：含 raw/objects/gist/githubassets） |
+| `probe` | `timeout_sec` | 15 | 单域名探测超时 |
 | `probe` | `core_targets` | github.com / api.github.com | 核心域名（永不降级，优先保证切换成功） |
-| `probe` | `degrade_after_rounds` | 10 | 非核心域名连续失败 N 轮 → 降级（≈10min） |
+| `probe` | `degrade_after_rounds` | 3 | 非核心域名连续失败 N 轮 → 降级（1h 粒度 ≈ 3h） |
 | `probe` | `recover_rounds` | 2 | 降级域名连续成功 N 轮 → 恢复纳入 |
-| `trigger` | `consecutive_failures` | 3 | 连续失败 N 轮触发切换 |
-| `trigger` | `cooldown_min` | 15 | 切换后冷却分钟数 |
+| `trigger` | `consecutive_failures` | 3 | 连续失败 N 轮触发切换（1h 粒度 ≈ 3h） |
+| `trigger` | `cooldown_min` | 180 | 切换后冷却分钟数（1h 粒度核算） |
 | `trigger` | `verify_success_rounds` | 2 | 自愈后连续成功轮数恢复 normal |
+| `github520` | `enabled` | true | GitHub520 社区 IP 集成开关（v0.2.18） |
+| `github520` | `url` | raw.hellogithub.com/hosts | 社区 hosts 拉取源 |
+| `github520` | `refresh_min` | 60 | 社区 IP 刷新周期（1 小时） |
+| `github520` | `core_first` | true | 核心域名 ghlink 自愈优先（社区 IP 只补非核心盲区） |
 | `resolver` | `doh_sources` | 阿里/腾讯/CF/Google | DoH 源 URL 列表 |
 | `resolver` | `cache_ttl_sec` | 3600 | 本地 IP 缓存有效期 |
 | `resolver` | `max_candidates` | 5 | 候选 IP 上限 |

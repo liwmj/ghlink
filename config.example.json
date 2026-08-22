@@ -1,14 +1,23 @@
 {
   "probe": {
-    "targets": ["github.com", "api.github.com", "codeload.github.com", "github.global.ssl.fastly.net"],
+    "targets": [
+      "github.com",
+      "api.github.com",
+      "codeload.github.com",
+      "github.global.ssl.fastly.net",
+      "raw.githubusercontent.com",
+      "objects.githubusercontent.com",
+      "gist.github.com",
+      "github.githubassets.com"
+    ],
     "timeout_sec": 15,
     "core_targets": ["github.com", "api.github.com"],
-    "degrade_after_rounds": 10,
+    "degrade_after_rounds": 3,
     "recover_rounds": 2
   },
   "trigger": {
     "consecutive_failures": 3,
-    "cooldown_min": 15,
+    "cooldown_min": 180,
     "verify_success_rounds": 2
   },
   "resolver": {
@@ -20,6 +29,12 @@
     ],
     "cache_ttl_sec": 3600,
     "max_candidates": 5
+  },
+  "github520": {
+    "enabled": true,
+    "url": "https://raw.hellogithub.com/hosts",
+    "refresh_min": 60,
+    "core_first": true
   },
   "notify": {
     "enabled": true,

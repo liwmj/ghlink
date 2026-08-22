@@ -1,23 +1,35 @@
 #!/bin/sh
-# prerm: 卸载前动作（ghlink v0.2.0）
+# prerm: 卸载前动作（ghlink v0.2.16）
+# v0.2.16 修复（拂晓 2026-08-17 报告）：升级时 dpkg 也触发 prerm，
+# 无条件 ghlink disable 会把 timer 删掉 → 升级后需手动重新 enable。
+# 改为：仅 remove（卸载）时停值守；upgrade（升级）时保留 enable 状态。
 set -e
 
-# 1. 停止并移除定时任务（如果已启用）
-if command -v ghlink >/dev/null 2>&1; then
-    ghlink disable 2>/dev/null || true
-fi
+# dpkg 调用 prerm 时传入动作参数：$1 = remove（卸载）/ upgrade（升级）/ deconfigure 等
+ACTION="$1"
 
-# 2. 清理 systemd 残留（兜底）
-if [ -f /etc/systemd/system/ghlink.timer ]; then
-    systemctl disable --now ghlink.timer 2>/dev/null || true
-    rm -f /etc/systemd/system/ghlink.timer /etc/systemd/system/ghlink.service 2>/dev/null || true
-    systemctl daemon-reload 2>/dev/null || true
+if [ "$ACTION" = "remove" ]; then
+    # 1. 停止并移除定时任务（仅卸载时；升级保留值守 enable 状态）
+    if command -v ghlink >/dev/null 2>&1; then
+        ghlink disable 2>/dev/null || true
+    fi
+
+    # 2. 清理 systemd 残留（兜底，仅卸载）
+    if [ -f /etc/systemd/system/ghlink.timer ]; then
+        systemctl disable --now ghlink.timer 2>/dev/null || true
+        rm -f /etc/systemd/system/ghlink.timer /etc/systemd/system/ghlink.service 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+    fi
 fi
 
 # 3. 清理 __pycache__（构建含 pycache 时卸载报 not empty 警告，P2 修复）
 find /usr/lib/ghlink -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 rm -rf /usr/lib/ghlink/src/ghlink/__pycache__ 2>/dev/null || true
 
-# 4. 保留用户配置（conffile 机制自动处理 /etc/ghlink/config.json）
+# 4. 删除旧配置（李工 2026-08-22 定：卸载/换版本都删旧配置）
+#    - remove（卸载）：删 /etc/ghlink 配置 + /var/lib/ghlink 状态，干净卸载
+#    - upgrade（升级）：也删旧配置（postinst 会用最新模板重建默认配置），
+#      避免旧字段不兼容（v0.2.19.x 曾因平台无效路径字段出问题）
+rm -rf /etc/ghlink /var/lib/ghlink 2>/dev/null || true
 
 exit 0

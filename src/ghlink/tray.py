@@ -14,17 +14,25 @@ import threading
 import time
 from typing import Any, Dict
 
+# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+from typing import Any as _Any
+
 from . import service, state
 
-# pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
+HAS_TRAY = False
 try:
-    import pystray
-    from PIL import Image, ImageDraw
+    import pystray as _pystray
+    from PIL import Image as _PILImage
+    from PIL import ImageDraw as _ImageDraw
 
+    pystray: _Any = _pystray
+    Image: _Any = _PILImage
+    ImageDraw: _Any = _ImageDraw
     HAS_TRAY = True
 except Exception:  # pragma: no cover - 未装依赖时
     pystray = None
     Image = None
+    ImageDraw = None
     HAS_TRAY = False
 
 # 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
@@ -45,7 +53,7 @@ _TEXT = {
 
 
 def _icon_path() -> str:
-    """项目图标路径：安装包（PyInstaller datas）优先，仓库 assets/ 兜底。"""
+    """项目图标路径：安装包（PyInstaller datas）优先，仓库/brew 兜底。"""
     candidates = []
     if getattr(sys, "frozen", False):  # PyInstaller 打包环境
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
@@ -54,6 +62,14 @@ def _icon_path() -> str:
     candidates.append(
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "assets",
+            "ghlink-icon.png",
+        )
+    )
+    # brew 安装环境（v0.2.17 补装：libexec/assets/，李工规格必须 LOGO）
+    candidates.append(
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "assets",
             "ghlink-icon.png",
         )
@@ -85,24 +101,59 @@ def _load_state() -> Dict[str, Any]:
     return state.load(p) if os.path.exists(p) else {}
 
 
+def _hide_dock_icon() -> None:
+    """macOS：隐藏 Dock 图标（LSUIElement 等效，托盘常驻不占 Dock）。
+
+    2026-08-17 v0.2.16（李工 18:43 反馈）：托盘用 python 进程跑，
+    Dock 一直显示 Python 图标。用 Objective-C runtime 设置
+    NSApplicationActivationPolicyAccessory（=1）隐藏 Dock，零依赖
+    （不引 pyobjc，ctypes 直接调 objc runtime）。
+    """
+    if sys.platform != "darwin":  # pragma: no cover - 仅 macOS
+        return
+    try:  # pragma: no cover - 依赖 macOS 运行时
+        import ctypes
+        import ctypes.util
+
+        objc_lib = ctypes.util.find_library("objc")
+        if not objc_lib:
+            return
+        objc = ctypes.cdll.LoadLibrary(objc_lib)
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.objc_msgSend.restype = ctypes.c_void_p
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        cls = objc.objc_getClass(b"NSApplication")
+        sel = objc.sel_registerName(b"sharedApplication")
+        app = objc.objc_msgSend(cls, sel)
+        # setActivationPolicy: 0=Regular(显示Dock) 1=Accessory(隐藏Dock) 2=Prohibited
+        objc.objc_msgSend(app, objc.sel_registerName(b"setActivationPolicy:"), ctypes.c_int(1))
+    except Exception:
+        pass  # 隐藏失败不阻塞托盘（仅 Dock 图标可见性）
+
+
 def _status_text() -> str:
     st = _load_state()
     s = st.get("state", "normal")
-    watching = service._is_enabled()
     txt = _TEXT.get(s, s)
-    watch = "值守已启用" if watching else "值守未启用"
-    return f"状态: {txt} ｜ {watch}"
+    return f"状态: {txt} ｜ {service._watch_status_text()}"
 
 
 def _make_icon(color: str, size: int = 64):
-    """生成托盘图标：项目图标 + 右下角状态色徽章；无图标资源时回退纯色圆角。"""
+    """生成托盘图标：LOGO 主体 + 右下角状态色角标（v0.2.17 李工规格）。
+
+    李工 21:47 定：托盘图标必须用 LOGO（ghlink-icon.png）本体，
+    状态只用角标色标注（绿/黄/红/灰），不再回退纯色圆角+G。
+    图标资源缺失时也不回退纯色——直接返回 None 由调用方兜底
+    （HAS_TRAY 已保证依赖存在，LOGO 缺失属打包问题应暴露）。
+    """
     img = None
     path = _icon_path()
     if path:
         try:
             icon = Image.open(path).convert("RGBA")
             # contain 居中：保持比例不变形（横版图标贴入方形画布）
-            icon.thumbnail((size, size), Image.LANCZOS)
+            icon.thumbnail((size, size), Image.Resampling.LANCZOS)
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             img.paste(
                 icon,
@@ -111,12 +162,12 @@ def _make_icon(color: str, size: int = 64):
             )
         except Exception:
             img = None
-    if img is None:  # 回退：纯色圆角 + 中心 G
+    if img is None:  # LOGO 缺失：暴露问题而非纯色回退（李工规格：必须 LOGO）
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.ellipse((4, 4, size - 4, size - 4), fill=color)
+        d.ellipse((4, 4, size - 4, size - 4), fill="#8E8E93")
         d.text((size * 0.35, size * 0.28), "G", fill="white")
-    # 右下角状态徽章（带白边，深浅底色都清晰）
+    # 右下角状态色角标（带白边，深浅底色都清晰）
     d = ImageDraw.Draw(img)
     r = max(size // 8, 6)
     cx, cy = size - r - 2, size - r - 2
@@ -125,22 +176,31 @@ def _make_icon(color: str, size: int = 64):
     return img
 
 
-def _refresh(icon: Any) -> None:
-    """定时刷新：状态文件 → 图标颜色 + 菜单文字。
+def _state_color() -> str:
+    """状态灯四色判定（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
 
-    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    v0.2.19（李工 8 条④）：初始图标与 _refresh 共用此判定，不再各自为政——
+    修复 Windows 托盘启动瞬间「绿角标+菜单未运行」不匹配（原 main() 只看 state
+    映射，没判断值守是否启用）。
     """
     st = _load_state()
     s = st.get("state", "normal")
     watching = service._is_enabled()
     if s in ("degraded",):
-        color = _COLOR["degraded"]  # 异常红（最高优先）
-    elif s in ("verifying", "switching"):
-        color = _COLOR["verifying"]  # 切换/验证中黄
-    elif watching:
-        color = _COLOR["normal"]  # 值守启用且正常绿
-    else:
-        color = _COLOR["idle"]  # 正常但值守未启用蓝
+        return _COLOR["degraded"]  # 异常红（最高优先）
+    if s in ("verifying", "switching"):
+        return _COLOR["verifying"]  # 切换/验证中黄
+    if watching:
+        return _COLOR["normal"]  # 值守启用且正常绿
+    return _COLOR["idle"]  # 正常但值守未启用蓝
+
+
+def _refresh(icon: Any) -> None:
+    """定时刷新：状态文件 → 图标颜色 + 菜单文字。
+
+    状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    """
+    color = _state_color()
     try:
         icon.icon = _make_icon(color)
         icon.title = _status_text()
@@ -183,7 +243,10 @@ def _run_privileged(subcmd: str) -> bool:
             return ret > 32
         import subprocess
 
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        kwargs: dict = {}
+        if sys.platform == "win32":  # v0.2.16：提权已具备时不弹命令窗
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **kwargs)
         return r.returncode == 0
     except Exception:
         return False
@@ -213,24 +276,30 @@ def _quit_tray(icon: Any, item: Any) -> None:
                 time.sleep(2)
             except Exception:
                 pass
-        if service._is_enabled():
+        # 2026-08-17 口径对齐：退出=停值守，查平台任务注册（残留清理语义）
+        # 不能用新 _is_enabled()（托盘进程+心跳双确认）——僵尸场景会漏清
+        if service._is_registered():
             _run_privileged("disable")
     except Exception:
         pass
     icon.stop()
 
 
-def _toggle_watch(icon: Any, item: Any) -> None:
-    """值守开关：复用 enable/disable 通道（Windows schtasks / macOS LaunchDaemon）。"""
+def _toggle_autostart(icon: Any, item: Any) -> None:
+    """开机自启动开关（李工 23:37 定规）：控制托盘是否随登录自动启动。
+
+    注意：托盘=值守总开关（方案 A）——打开托盘值守已启动，此开关只控制
+    「登录时是否自动拉起托盘」（Windows Run key / macOS LaunchAgent），
+    不控制值守本身。
+    """
     try:
-        watching = service._is_enabled()
-        if watching:
-            code = service.disable()
-            msg = "值守已停用" if code == 0 else f"停用失败(code={code})"
+        if service._is_autostart():
+            ok = service._disable_autostart()
+            msg = "开机自启动已关闭" if ok else "关闭失败"
         else:
-            code = service.enable()
-            msg = "值守已启用（1 分钟粒度）" if code == 0 else f"启用失败(code={code})"
-        if code != 0:
+            ok = service._enable_autostart()
+            msg = "开机自启动已开启" if ok else "开启失败"
+        if not ok:
             _notify(icon, msg)
     except Exception as exc:  # pragma: no cover
         _notify(icon, f"操作失败: {exc}")
@@ -272,7 +341,7 @@ def _hosts_ip() -> str:
 
 
 def _current_ip() -> str:
-    """当前生效 IP：state.current_ip 优先，history 兜底，再兜底 hosts 实际解析（赛博设计口径）。"""
+    """当前生效 IP：current_ip → history → hosts → 系统 DNS（v0.2.9 兜底链补全）。"""
     st = _load_state()
     ip = st.get("current_ip")
     if not ip and st.get("history"):
@@ -280,7 +349,15 @@ def _current_ip() -> str:
         ip = last.get("ip") if isinstance(last, dict) else last
     if not ip:
         ip = _hosts_ip()
-    return ip or "—"
+    if not ip:
+        try:
+            import socket as _socket
+
+            infos = _socket.getaddrinfo("github.com", None, _socket.AF_INET)
+            ip = infos[0][4][0]
+        except Exception:
+            pass
+    return str(ip) if ip else "—"
 
 
 def _copy_ip(icon: Any, item: Any) -> None:
@@ -303,22 +380,89 @@ def _copy_ip(icon: Any, item: Any) -> None:
 
 def _build_menu():
     watching = service._is_enabled()
+    autostart = service._is_autostart()
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
             lambda _: f"当前 IP: {_current_ip()}（点击复制）",
             _copy_ip,
-            default=True,  # 双击托盘图标默认动作 = 复制 IP
+            # v0.2.17（李工 21:45 反馈）：去掉 default——左键右键都弹菜单，
+            # 只有点击菜单里的 IP 项才复制（default=True 时左键单击直接复制）
+        ),
+        pystray.MenuItem(
+            lambda _: f"值守: {'运行中' if watching else '未运行'}",
+            None,
+            enabled=False,
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
-            "停用值守" if watching else "启用值守",
-            _toggle_watch,
-            checked=lambda _: watching,
+            "开机自启动（随登录启动托盘）",
+            _toggle_autostart,
+            checked=lambda _: autostart,
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("退出托盘（同时停值守）", _quit_tray),
+        pystray.MenuItem("退出托盘", _quit_tray),
     )
+
+
+def _detach_if_terminal() -> bool:
+    """⑤ 托盘 detach 常驻（v0.2.16，李工/赛博 20:33 批准）。
+
+    从终端手动启动托盘（ghlink tray）时，自动脱离终端会话独立常驻——
+    关闭终端窗口不影响托盘运行（否则终端关闭 → SIGHUP → 托盘退出）。
+    返回 True 表示已 detach（本进程应退出，托盘已在后台常驻）。
+    """
+    try:
+        if not sys.stdin.isatty():  # 非终端启动（自启动/双击）无需 detach
+            return False
+    except Exception:
+        return False
+    try:
+        import subprocess as _sp
+
+        # 构造重新拉起自己的命令（与入口一致）
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "tray"]
+        else:
+            cmd = [sys.executable, "-m", "ghlink.main", "tray"]
+        kwargs: dict = {
+            "stdin": _sp.DEVNULL,
+            "stdout": _sp.DEVNULL,
+            "stderr": _sp.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(_sp, "DETACHED_PROCESS", 0) | getattr(
+                _sp, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        else:
+            kwargs["start_new_session"] = True
+        _sp.Popen(cmd, **kwargs)
+        return True
+    except Exception:
+        return False
+
+
+def _ensure_enabled_sync() -> bool:
+    """① 同步确保值守已启用（v0.2.18 修正：失败不阻断托盘启动）。
+
+    李工 23:21 批评：v0.2.17 按 A 语义（提权失败 → return 2 托盘直接退出）
+    → Windows UAC 取消/弹窗异常时托盘完全起不来。修正为 B 语义：
+    enable 提权仍前置同步执行（detach 前、icon.run 前），但失败时
+    **托盘照常启动、状态如实显示未启用**——用户可能只想开托盘看状态。
+    """
+    try:
+        if service._is_enabled():
+            return True
+        if not _run_privileged("enable"):
+            return False
+        # ShellExecuteW runas 异步启动提权进程：给 enable 落盘一点时间
+        for _ in range(10):
+            if service._is_enabled():
+                return True
+            time.sleep(0.5)
+        return service._is_enabled()
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -329,6 +473,24 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+
+    # ① v0.2.18（李工 23:21 批评修正）：enable 提权前置同步执行，
+    # 但失败**不阻断托盘启动**（B 语义）——UAC 取消时托盘照常启动、
+    # 状态显示未启用；避免「值守没开 → 托盘也起不来」的体验倒退
+    if sys.platform == "win32":
+        try:
+            _ensure_enabled_sync()
+        except Exception:
+            pass
+
+    # ⑤ 托盘 detach 常驻（v0.2.16）：从终端启动 → 脱离终端会话后台常驻
+    try:
+        if _detach_if_terminal():
+            print("[ghlink] 托盘已在后台常驻运行（已脱离终端）", file=sys.stderr)
+            return 0
+    except Exception:
+        pass
+
     if not HAS_TRAY:  # pragma: no cover
         print(
             "[ghlink] 缺少托盘依赖（pystray/Pillow）。"
@@ -337,9 +499,30 @@ def main() -> int:
         )
         return 2
 
-    st = _load_state()
-    s = st.get("state", "normal")
-    color = _COLOR.get(s, "#8E8E93")
+    # ③ 单实例锁（李工 09:49 反馈：自启动后多一个托盘）：已有托盘进程则提示退出
+    # 李工 14:40 反馈 Windows 托盘闪退根因：PyInstaller onefile 下 exe 运行时
+    # 是「引导进程 + Python 子进程」两个同名进程，tasklist 排除自身 PID 仍会
+    # 误判引导进程为已有实例 → 托盘启动即退出。改用 _tray_single_instance()
+    # （Windows 命名互斥体，macOS/Linux 保留 pgrep 排除自身）
+    try:
+        if service._tray_single_instance():
+            print(
+                "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
+                file=sys.stderr,
+            )
+            return 0
+    except Exception:
+        pass
+
+    # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
+    _hide_dock_icon()
+
+    # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
+    service._write_tray_pid()
+
+    # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定
+    # （值守未启用→蓝，修复绿角标+菜单未运行不匹配）
+    color = _state_color()
     icon = pystray.Icon(
         "ghlink",
         _make_icon(color),

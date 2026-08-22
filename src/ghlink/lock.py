@@ -26,15 +26,48 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _safe_lock_path(lock_path: str) -> str:
+    """校验并规范化锁文件路径（SonarCloud S8707：防符号链接/路径逃逸）。
+
+    要求：绝对路径 + realpath 解析符号链接 + 路径必须位于允许目录
+    （/var/lib/ghlink、系统临时目录、/tmp、/var/tmp 或用户主目录）内。
+    """
+    import tempfile
+
+    resolved = os.path.realpath(lock_path)
+    if not os.path.isabs(resolved):
+        raise ValueError(f"lock path must be absolute: {lock_path}")
+    # v0.2.19（李工 8 条⑧）：锁路径基准已改为平台默认目录（_config_base），
+    # 白名单同步补 %ProgramData%\ghlink（Windows SYSTEM 可写）与 /etc/ghlink（root）
+    allowed_roots = (
+        "/var/lib/ghlink",
+        "/etc/ghlink",
+        os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink"),
+        tempfile.gettempdir(),
+        os.path.expanduser("~"),
+    )
+    for root in allowed_roots:
+        root = os.path.realpath(root)
+        if resolved == root or resolved.startswith(root + os.sep):
+            return resolved
+    raise ValueError(f"lock path outside allowed dirs: {resolved}")
+
+
 @contextmanager
 def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
     """获取锁；成功 yield True，已被持有 yield False（调用方直接退出本轮）。"""
+    # SonarCloud S8707：入口统一校验+规范化路径，后续访问全部使用校验后路径
+    lock_path = _safe_lock_path(lock_path)
     # Linux/macOS 用 flock 内核锁（进程退出自动释放）
     if sys.platform != "win32":
         try:
             import fcntl
 
-            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+            # 2026-08-17 Bug B 修复：绝对路径（/var/lib/ghlink/）目录可能不存在，先建
+            os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+            # SonarCloud S5443：O_NOFOLLOW 防符号链接攻击（公共可写目录安全使用）
+            flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(lock_path, flags, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 os.ftruncate(fd, 0)
@@ -57,7 +90,9 @@ def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
             pass  # 平台不支持 → 回退 PID 文件方案
         else:
             try:
-                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+                # SonarCloud S5443：O_NOFOLLOW 防符号链接攻击（公共可写目录安全使用）
+                flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(lock_path, flags, 0o644)
             except OSError:
                 yield False  # 锁文件不可打开，视为被占用，跳过本轮
                 return
