@@ -218,6 +218,16 @@ def _sync(
     # 拉取失败 → 缓存兜底（缓存已抽检过）
     cached = load_cached(state_dir)
     if cached:
+        if include_core:
+            # v0.4.3（李工 8 bug 点④ + 顾笙无缓存场景验证）：首装全量语义下
+            # 缓存是 sync_github520(include_core=False) 存的，本就不含核心域名——
+            # 若直接剔除核心，动态从未成功 + 拉取失败时 hosts 段无 github.com
+            # 主条目。从内置快照补齐核心域名静态 IP（20.205.243.166 github.com 等）。
+            builtin = parse_hosts(BUILTIN_GITHUB520_HOSTS)
+            for _d in core:
+                if _d in builtin and _d not in cached:
+                    cached[_d] = builtin[_d]
+            return cached
         return {d: ips for d, ips in cached.items() if d not in core}
     # 内置快照兜底（防首装断网尴尬）
     builtin = parse_hosts(BUILTIN_GITHUB520_HOSTS)

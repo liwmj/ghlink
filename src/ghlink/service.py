@@ -69,9 +69,12 @@ def _config_path() -> str:
         return primary
     if os.name == "posix" and os.geteuid() != 0:
         for cand in (
+            # v0.4.3（李工 8 bug 点④ macOS 真机验收）：/etc/ghlink 优先——
+            # enable(root) 写入的权威位置，心跳最新；旧残留（brew/旧版）可能指向
+            # 绝对路径 state_file 导致 tray 读旧心跳误判僵尸，必须放最后
+            "/etc/ghlink/config.json",
             "/opt/homebrew/etc/ghlink/config.json",
             "/usr/local/etc/ghlink/config.json",
-            "/etc/ghlink/config.json",
         ):
             if os.path.exists(cand) and os.access(cand, os.R_OK):
                 return cand
@@ -118,6 +121,11 @@ def enable() -> int:
         return 2
     # 2026-08-17 Bug B 修复：enable 前确保 config 落位（/etc/ghlink/config.json 不存在则复制）
     _ensure_config()
+    # v0.4.3（李工 8 bug 点④ macOS 真机验收）：macOS 上旧版 brew/残留 config
+    # （/usr/local/etc、/opt/homebrew/etc）与 /etc/ghlink 并存 → state_file 解析不一致
+    # （相对 vs 绝对）→ tray 读旧状态文件误判「值守未运行」。enable 时清理并存旧 config：
+    # 备份到 /etc/ghlink/backup/ 后删除，只留权威 /etc/ghlink/config.json。
+    _cleanup_duplicate_configs()
     # v0.2.19.2（赛博 Windows 严格测试 P1）：升级迁移——旧版 config 的
     # state/lock/backup 可能是 Unix 绝对路径（/var/lib/ghlink/...），在 Windows
     # 上无效 → 状态文件写不进 → 心跳停 + hosts 不落盘。检测到平台无效路径时
@@ -159,9 +167,49 @@ def enable() -> int:
         return 2
 
 
+def _cleanup_duplicate_configs() -> None:
+    """清理并存旧 config，根治状态文件路径分裂（v0.4.3）。
+
+    2026-08-23 李工 8 bug 点④ macOS 真机验收（顾笙诊断）：macOS 上
+    /etc/ghlink/config.json（state_file 相对路径，LaunchDaemon 写）与
+    /usr/local/etc/ghlink/config.json（state_file 绝对路径 /var/lib/ghlink/...，
+    旧版 brew 残留）并存 → tray 的 _config_path() 解析到旧文件读旧心跳
+    → 误判「值守未运行」（实际值守正常）。
+
+    修复：enable（root）时检测 /usr/local/etc/ghlink、/opt/homebrew/etc/ghlink
+    下的 config.json，备份到权威目录 backup/ 后删除，只留 /etc/ghlink/config.json。
+    """
+    if os.name != "posix" or os.geteuid() != 0:
+        return
+    authority = "/etc/ghlink/config.json"
+    if not os.path.exists(authority):
+        return
+    import shutil as _shutil
+    import time as _t
+
+    backup_dir = "/etc/ghlink/backup"
+    for old in (
+        "/usr/local/etc/ghlink/config.json",
+        "/opt/homebrew/etc/ghlink/config.json",
+    ):
+        if not os.path.exists(old):
+            continue
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            stamp = _t.strftime("%Y%m%d%H%M%S")
+            dst = os.path.join(
+                backup_dir,
+                f"config.legacy.{os.path.basename(os.path.dirname(old))}.{stamp}",
+            )
+            _shutil.copy2(old, dst)
+            os.unlink(old)
+            print(f"[ghlink] 已清理并存旧 config（备份至 {dst}），统一使用 /etc/ghlink/config.json")
+        except OSError as exc:
+            print(f"[ghlink] 清理旧 config {old} 失败（跳过，不影响 enable）: {exc}")
+
+
 def _ensure_config() -> None:
     """确保配置文件存在：目标 _config_path()，缺失则从 config.example.json 复制。
-
     2026-08-17 拂晓/顾笙双端实锤 Bug B：deb/brew 装完 /etc/ghlink/config.json
     可能不存在（brew 不落配置、deb 路径不一致），LaunchDaemon/systemd 裸跑
     直接读不到 → 值守僵尸。enable 前兜底复制，保证注册即能跑。
