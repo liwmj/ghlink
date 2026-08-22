@@ -236,11 +236,22 @@ def detect_external_dupes(path: str = "") -> Dict[str, str]:
 
 
 def verify_after_apply(targets: List[str], timeout_sec: float) -> bool:
-    """写入后立即自检：新 IP 下全部目标连通才算成功。"""
+    """写入后立即自检：新 IP 下全部目标连通才算成功。
+
+    v0.4.4（李工 03:27 终裁 B 方案，顾笙无缓存场景专项发现）：分级宽容降级——
+    先三层全检（TCP+TLS+HTTP HEAD），失败目标用 TCP-only 复检：
+    TCP 通判通过（与预检同口径，防 TLS 干扰误杀——TLS 握手被干扰但 IP 实际可达
+    时不再回滚清空兜底写入）；TCP 也不通才判失败（真坏 IP 仍回滚，坏配置绝不留场）。
+    """
     from . import probe
 
     results = probe.probe_all(targets, timeout_sec)
-    return probe.round_ok(results)
+    failed = [h for h, r in results.items() if not r.get("ok")]
+    if not failed:
+        return True
+    # 分级宽容：失败目标 TCP-only 复检（TCP 通即通过）
+    tcp_results = probe.probe_tcp_only_many(failed, timeout_sec)
+    return all(r.get("ok") for r in tcp_results.values())
 
 
 def rollback(backup_path: str) -> bool:
