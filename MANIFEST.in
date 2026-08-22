@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include config.example.json
+recursive-include tests *.py
+recursive-include packaging/debian *.sh
+recursive-include packaging/windows *.iss *.spec *.py *.isl
+recursive-include packaging/brew *.rb
+recursive-include scripts *.sh
+recursive-include assets *.png *.ico
