@@ -216,6 +216,20 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             # v0.4.0（李工 12:35 点 1）：动态解析失败但有 github520 静态兜底 → 仍写静态段，
             # 不因动态失败就什么都不写（首装/断网场景保证 hosts 有可用条目）
             if github520_entries:
+                # v0.4.3（顾笙无缓存场景验证）：github520_entries 可能不含核心域名
+                # （已初始化分支返回现有子段、缓存兜底分支本就不含）——动态从未成功且
+                # 无历史缓存时，从内置快照补核心域名静态 IP，保证 hosts 段必有 github.com 主条目
+                core_missing = [
+                    d for d in ("github.com", "api.github.com") if d not in github520_entries
+                ]
+                if core_missing:
+                    from . import builtin_github520 as _b520
+                    from . import github520 as _g520
+
+                    builtin = _g520.parse_hosts(_b520.BUILTIN_GITHUB520_HOSTS)
+                    for _d in core_missing:
+                        if _d in builtin:
+                            github520_entries[_d] = builtin[_d]
                 block = hosts_manager.build_combined_block({}, github520_entries)
                 ok_apply, backup_path = hosts_manager.apply_block(
                     block, _backup_dir(cfg, config_path)
