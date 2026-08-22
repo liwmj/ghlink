@@ -189,10 +189,7 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                     block, _backup_dir(cfg, config_path)
                 )
                 st["state"] = "normal" if ok else "degraded"
-                st["last_error"] = (
-                    "dynamic resolver failed, "
-                    "github520 static fallback written"
-                )
+                st["last_error"] = "dynamic resolver failed, github520 static fallback written"
                 st.setdefault("candidate_sources", {})["dynamic"] = "failed"
                 st["candidate_sources"]["github520"] = "ok"
                 state.save(st_path, st)
