@@ -6,6 +6,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  tag-format-check:
+    name: tag 格式校验（SemVer 3 位，P-002 三.5.2）
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: 校验 tag 必须为 vX.Y.Z（禁止 4 位版本号）
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "校验 tag: $TAG"
+          # v0.3.0 李工 2026-08-22 定：严禁 x.x.x.x 4 位版本号，只允许 vX.Y.Z
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ tag 格式非法（必须 vX.Y.Z 三位）：$TAG"
+            exit 1
+          fi
+          echo "✅ tag 格式合法: $TAG"
+
   build-sdist:
     name: PyPI sdist + wheel
     runs-on: ubuntu-latest

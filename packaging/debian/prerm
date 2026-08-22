@@ -26,6 +26,10 @@ fi
 find /usr/lib/ghlink -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 rm -rf /usr/lib/ghlink/src/ghlink/__pycache__ 2>/dev/null || true
 
-# 4. 保留用户配置（conffile 机制自动处理 /etc/ghlink/config.json）
+# 4. 删除旧配置（李工 2026-08-22 定：卸载/换版本都删旧配置）
+#    - remove（卸载）：删 /etc/ghlink 配置 + /var/lib/ghlink 状态，干净卸载
+#    - upgrade（升级）：也删旧配置（postinst 会用最新模板重建默认配置），
+#      避免旧字段不兼容（v0.2.19.x 曾因平台无效路径字段出问题）
+rm -rf /etc/ghlink /var/lib/ghlink 2>/dev/null || true
 
 exit 0

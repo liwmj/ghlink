@@ -40,11 +40,13 @@ class Ghlink < Formula
     # 配置目录（默认不自启，enable 时才注册系统 LaunchDaemon）
     # v0.2.19（李工 8 条⑦）：config 模板直接同步 config.example.json（8 域名），
     # 不再手写硬编码旧模板（旧模板只有 2 域名，与最新配置脱节）
+    # v0.3.0（李工 2026-08-22 定）：换版本删旧配置——install 前清掉旧 config，
+    # 用最新模板重建默认配置，避免旧字段不兼容
     (etc/"ghlink").mkpath
-    unless File.exist?(etc/"ghlink/config.json")
-      tmpl = libexec/"config.example.json"
-      (etc/"ghlink/config.json").write(tmpl.read) if tmpl.exist?
-    end
+    old_cfg = etc/"ghlink/config.json"
+    old_cfg.delete if old_cfg.exist?
+    tmpl = libexec/"config.example.json"
+    (etc/"ghlink/config.json").write(tmpl.read) if tmpl.exist?
   end
 
   def caveats

@@ -14,6 +14,8 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
+from .builtin_github520 import BUILTIN_GITHUB520  # v0.3.0：首装断网/拉取失败兜底
+
 # 拉取状态缓存文件（放 state 同目录）
 _CACHE_NAME = "ghlink520_cache.json"
 
@@ -27,7 +29,7 @@ def _cache_path(state_dir: str = "") -> str:
 
 def fetch_hosts(url: str, timeout_sec: float = 30) -> str:
     """拉取 GitHub520 hosts 文本（失败抛异常，由调用方降级）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.2.19"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.3.0"})
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
@@ -146,4 +148,12 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
         pass
     # 拉取失败 → 缓存兜底（缓存已抽检过）
     cached = load_cached(state_dir)
-    return {d: ips for d, ips in cached.items() if d not in core}
+    if cached:
+        return {d: ips for d, ips in cached.items() if d not in core}
+    # v0.3.0（李工 2026-08-22 定）：缓存也空 → 内置快照兜底（防首装断网尴尬）
+    builtin = {d: ips for d, ips in BUILTIN_GITHUB520.items() if d not in core}
+    builtin = filter_reachable(builtin)
+    if builtin:
+        save_cache(builtin, state_dir)
+        return builtin
+    return {}
