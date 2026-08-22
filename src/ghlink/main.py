@@ -98,9 +98,14 @@ def _github520_entries(cfg: Dict[str, Any], st: Dict[str, Any], st_dir: str) -> 
     try:
         from . import github520 as g520
 
-        # 1) 已初始化 → 优先保留现有 hosts 子段
+        # 1) 已初始化 → 优先保留现有 hosts 子段；
+        #    v0.4.1（李工 19:31 定）：缓存 age 超 refresh_min 才重拉刷新（IP 变化才改段落）
         preserved = hosts_manager.current_g520_entries()
         if st.get("github520_initialized") and preserved:
+            refresh_min = int(cfg.get("github520", {}).get("refresh_min", 60))
+            if g520.cache_age(st_dir) > refresh_min * 60:
+                # 缓存过期：重拉刷新（sync 会更新缓存；段落内容变化由 apply_block 判断）
+                g520.sync_github520(cfg, st_dir)
             st.setdefault("github520", {})["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
             return preserved
 
@@ -376,6 +381,9 @@ def main() -> None:
         sys.exit(service.enable())
     if first == "disable":
         sys.exit(service.disable())
+    if first == "uninstall":
+        # v0.4.1（李工 19:31 终裁）：uninstall = 彻底删除（停任务 + 还原 hosts + 删配置）
+        sys.exit(service.uninstall())
     if first == "status":
         sys.exit(service.status())
     if first == "tray":

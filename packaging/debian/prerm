@@ -9,9 +9,9 @@ set -e
 ACTION="$1"
 
 if [ "$ACTION" = "remove" ]; then
-    # 1. 停止并移除定时任务（仅卸载时；升级保留值守 enable 状态）
+    # 1. 卸载清理（李工 2026-08-22 19:31 终裁：uninstall = 停任务 + 还原 hosts + 删配置）
     if command -v ghlink >/dev/null 2>&1; then
-        ghlink disable 2>/dev/null || true
+        ghlink uninstall 2>/dev/null || ghlink disable 2>/dev/null || true
     fi
 
     # 2. 清理 systemd 残留（兜底，仅卸载）

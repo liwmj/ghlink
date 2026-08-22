@@ -14,7 +14,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
-from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.4.0：首装断网/拉取失败兜底
+from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.4.1：首装断网/拉取失败兜底
 
 # 拉取状态缓存文件（放 state 同目录）
 _CACHE_NAME = "ghlink520_cache.json"
@@ -29,7 +29,7 @@ def _cache_path(state_dir: str = "") -> str:
 
 def fetch_hosts(url: str, timeout_sec: float = 30) -> str:
     """拉取 GitHub520 hosts 文本（失败抛异常，由调用方降级）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.4.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.4.1"})
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
@@ -76,8 +76,12 @@ def _safe_cache_path(state_dir: str = "") -> str:
     raise ValueError(f"cache path outside allowed dirs: {resolved}")
 
 
-def _ip_reachable(ip: str, timeout_sec: float = 5) -> bool:
-    """基础可达性抽检：TCP 443 连通即认为可用（防坏 IP 入场）。"""
+def _ip_reachable(ip: str, timeout_sec: float = 2.0) -> bool:
+    """基础可达性抽检：TCP 443 连通即认为可用（防坏 IP 入场）。
+
+    v0.4.1（拂晓实测建议）：超时 5s→2s 收敛——TCP 443 建连 <2s 即可判通断，
+    40 行 × 5s 串行最坏 200s，2s + 并行后显著提速。
+    """
     import socket
 
     try:
@@ -88,13 +92,44 @@ def _ip_reachable(ip: str, timeout_sec: float = 5) -> bool:
         return False
 
 
+def _precheck_ips(
+    ips: List[str],
+    timeout_sec: float = 2.0,
+    max_check: int = 5,
+    cache: Dict[str, bool] | None = None,
+) -> List[str]:
+    """v0.4.1（拂晓实测建议落地）：并行预检 + 短路 + 去重缓存。
+
+    - 并行：ThreadPoolExecutor 并发 TCP 443 预检（40 行最坏从串行 200s → 并行 ~2s）
+    - 短路：每域名最多预检前 max_check 条（first-match-wins 只吃首条）
+    - 去重：同 IP 本轮只预检一次（cache dict 跨域名共享结果）
+    - 语义：可达排前（ok_ips + rest），未预检的排后——保持现有排序语义
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    cache = cache if cache is not None else {}
+    to_check = [ip for ip in ips[:max_check] if ip not in cache]
+    with ThreadPoolExecutor(max_workers=max(len(to_check), 1)) as pool:
+        futs = {pool.submit(_ip_reachable, ip, timeout_sec): ip for ip in to_check}
+        for f in futs:
+            cache[futs[f]] = f.result()
+    ok = [ip for ip in ips if cache.get(ip)]
+    rest = [ip for ip in ips if ip not in ok]
+    return ok + rest
+
+
 def filter_reachable(entries: Dict[str, List[str]], max_ips: int = 2) -> Dict[str, List[str]]:
-    """抽检：每域名保留可达 IP（最多 max_ips 个），全不可达则剔除该域名。"""
+    """抽检：每域名保留可达 IP（最多 max_ips 个），全不可达则剔除该域名。
+
+    v0.4.1（拂晓实测建议）：改用 _precheck_ips 并行预检（超时 2s、短路前 5 条、去重）。
+    """
     out: Dict[str, List[str]] = {}
+    cache: Dict[str, bool] = {}
     for domain, ips in entries.items():
-        ok_ips = [ip for ip in ips[:5] if _ip_reachable(ip)]
+        ranked = _precheck_ips(ips, timeout_sec=2.0, max_check=5, cache=cache)
+        ok_ips = [ip for ip in ranked if cache.get(ip)][:max_ips]
         if ok_ips:
-            out[domain] = ok_ips[:max_ips]
+            out[domain] = ok_ips
     return out
 
 
@@ -109,6 +144,21 @@ def load_cached(state_dir: str = "") -> Dict[str, List[str]]:
     except (OSError, ValueError):
         pass
     return {}
+
+
+def cache_age(state_dir: str = "") -> float:
+    """v0.4.1：返回本地缓存年龄（秒）；无缓存/损坏返回超大值（视为过期需重拉）。"""
+    try:
+        path = _safe_cache_path(state_dir)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            ts = float(data.get("ts", 0))
+            if ts:
+                return time.time() - ts
+    except (OSError, ValueError):
+        pass
+    return float("inf")
 
 
 def save_cache(entries: Dict[str, List[str]], state_dir: str = "") -> None:
@@ -131,7 +181,7 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
 
 
 def initial_entries(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]]:
-    """首装全量兜底（v0.4.0 新增，李工 12:35 点 1）：含全部域名（含核心），
+    """首装全量兜底（v0.4.1 新增，李工 12:35 点 1）：含全部域名（含核心），
     预检过的 IP 排前、未预检的排后——首装/动态失败时 hosts 必有可用条目。
     """
     return _sync(cfg, state_dir, include_core=True, full_write=True)
@@ -184,12 +234,14 @@ def _sync(
 
 
 def _sort_prechecked_first(
-    entries: Dict[str, List[str]], timeout_sec: float = 5.0
+    entries: Dict[str, List[str]], timeout_sec: float = 2.0
 ) -> Dict[str, List[str]]:
-    """v0.4.0：全量写入时预检过的 IP 排前、未预检的排后（hosts 取首个命中）。"""
+    """v0.4.1：全量写入时预检过的 IP 排前、未预检的排后（hosts 取首个命中）。
+
+    v0.4.1（拂晓实测建议）：走 _precheck_ips 并行预检（超时 2s、短路前 5 条、去重缓存）。
+    """
     out: Dict[str, List[str]] = {}
+    cache: Dict[str, bool] = {}
     for domain, ips in entries.items():
-        ok_ips = [ip for ip in ips if _ip_reachable(ip, timeout_sec)]
-        rest = [ip for ip in ips if ip not in ok_ips]
-        out[domain] = ok_ips + rest
+        out[domain] = _precheck_ips(ips, timeout_sec=timeout_sec, max_check=5, cache=cache)
     return out

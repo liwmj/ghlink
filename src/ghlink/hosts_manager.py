@@ -180,6 +180,32 @@ def apply_block(
     return True, backup
 
 
+def remove_block(path: str = "") -> bool:
+    """v0.4.1（拂晓 Linux 严格测试发现）：移除 hosts 中的 ghlink 段落（含 ghlink520 子段），
+    还原基线（disable/卸载时调用，李工"卸载也直接删"要求）。段落不存在返回 True（幂等）。"""
+    if not platform_adapter.ensure_privilege():
+        return False
+    path = path or platform_adapter.get_hosts_path()
+    content = _read_hosts(path)
+    start = content.find(START_MARK)
+    end = content.find(END_MARK)
+    if start == -1 or end == -1 or end <= start:
+        return True  # 无段落，幂等成功
+    # 移除段落（含段落前后的多余空行清理）
+    before = content[:start]
+    after = content[end + len(END_MARK) :]
+    new_content = before + after
+    # 清理段落移除后残留的双空行
+    while "\n\n\n" in new_content:
+        new_content = new_content.replace("\n\n\n", "\n\n")
+    if new_content == content:
+        return True
+    if not _write_hosts(path, new_content):
+        return False
+    platform_adapter.flush_dns()
+    return True
+
+
 def detect_external_dupes(path: str = "") -> Dict[str, str]:
     """v0.4.0（李工 12:35 点 3）：检测段落外预存的 GitHub 生态域名条目。
 

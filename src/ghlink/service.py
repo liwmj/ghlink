@@ -265,7 +265,8 @@ def _migrate_legacy_paths() -> None:
 
 
 def disable() -> int:
-    """移除定时任务。返回退出码（0=成功，2=权限/错误）。"""
+    """移除定时任务，保留 hosts 段落与配置（李工 2026-08-22 19:31 终裁：disable=暂停）。
+    返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
         print(
             "[ghlink] 错误：需要管理员/root 权限。"
@@ -275,14 +276,45 @@ def disable() -> int:
         return 2
     try:
         if sys.platform == "win32":
-            return _disable_windows()
+            rc = _disable_windows()
         elif sys.platform == "darwin":
-            return _disable_macos()
+            rc = _disable_macos()
         else:
-            return _disable_linux()
+            rc = _disable_linux()
+        if rc == 0:
+            print(
+                "[ghlink] 已停用值守：保留最后写入的 hosts IP 与配置，不再自动更新。"
+                "如需清理 hosts 段落或彻底卸载，请用 ghlink uninstall"
+            )
+        return rc
     except Exception as exc:
         print(f"[ghlink] disable 失败: {exc}", file=sys.stderr)
         return 2
+
+
+def uninstall() -> int:
+    """卸载清理（李工 2026-08-22 19:31 终裁：uninstall=彻底删除）。
+
+    = disable（停任务）+ remove_block（还原 hosts）+ 删配置目录（当前平台）。
+    返回退出码（0=成功，2=权限/错误）。"""
+    rc = disable()
+    if rc != 0:
+        return rc
+    # 还原 hosts（删 ghlink 段落 + 恢复基线）
+    if hosts_manager.remove_block():
+        print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
+    else:
+        print("[ghlink] 警告：hosts 段落移除失败（权限？），请手动检查", file=sys.stderr)
+    # 删除配置目录（当前平台生效的配置/状态/缓存）
+    cfg_path = _config_path()
+    cfg_dir = os.path.dirname(os.path.abspath(cfg_path)) if cfg_path else ""
+    for d in (cfg_dir,):
+        if d and os.path.isdir(d) and os.path.basename(d) in ("ghlink", ".ghlink"):
+            import shutil as _sh
+
+            _sh.rmtree(d, ignore_errors=True)
+            print(f"[ghlink] 已删除配置目录: {d}")
+    return 0
 
 
 def status() -> int:

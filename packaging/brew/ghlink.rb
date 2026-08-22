@@ -53,9 +53,10 @@ class Ghlink < Formula
     <<~EOS
       ghlink 已安装。使用步骤：
         1. 编辑配置: sudo vim #{etc}/ghlink/config.json
-        2. 启用值守: sudo ghlink enable   （注册系统 LaunchDaemon，1 分钟粒度，需 root 写 hosts）
+        2. 启用值守: sudo ghlink enable   （注册系统 LaunchDaemon，1 小时粒度，需 root 写 hosts）
         3. 查看状态: ghlink status
-        4. 停用值守: sudo ghlink disable
+        4. 停用值守: sudo ghlink disable  （保留最后写入的 hosts IP 与配置，不再自动更新）
+        5. 卸载清理: sudo ghlink uninstall（停任务 + 还原 hosts + 删配置，v0.4.1 起）
       默认不自启（opt-in），enable 后才注册定时任务。
       注意：值守需 root 权限（写 /etc/hosts），请用 sudo ghlink enable。
     EOS
