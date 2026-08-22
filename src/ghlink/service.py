@@ -265,7 +265,8 @@ def _migrate_legacy_paths() -> None:
 
 
 def disable() -> int:
-    """移除定时任务。返回退出码（0=成功，2=权限/错误）。"""
+    """移除定时任务 + 还原 hosts（v0.4.1：李工"卸载也直接删"，拂晓测试发现）。
+    返回退出码（0=成功，2=权限/错误）。"""
     if not platform_adapter.ensure_privilege():
         print(
             "[ghlink] 错误：需要管理员/root 权限。"
@@ -275,11 +276,19 @@ def disable() -> int:
         return 2
     try:
         if sys.platform == "win32":
-            return _disable_windows()
+            rc = _disable_windows()
         elif sys.platform == "darwin":
-            return _disable_macos()
+            rc = _disable_macos()
         else:
-            return _disable_linux()
+            rc = _disable_linux()
+        # v0.4.1（拂晓 Linux 严格测试发现）：disable 必须还原 hosts（移除 ghlink 段落），
+        # 否则首装全量写后卸载/停用会残留 hosts 段（违反李工"卸载也直接删"）
+        if rc == 0:
+            if hosts_manager.remove_block():
+                print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
+            else:
+                print("[ghlink] 警告：hosts 段落移除失败（权限？），请手动检查", file=sys.stderr)
+        return rc
     except Exception as exc:
         print(f"[ghlink] disable 失败: {exc}", file=sys.stderr)
         return 2
