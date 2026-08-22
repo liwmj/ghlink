@@ -18,6 +18,10 @@ def default_state() -> Dict[str, Any]:
         "probe": {"targets": {}, "consecutive_failures": 0},
         # v0.2.8：resolver 源级健康记录 {source_url: {ok, last_error, last_ok_at}}
         "source_health": {},
+        # v0.4.3（李工 8 bug 点④ macOS 真机验收）：动态解析最近成功值缓存
+        # {domain: [ip, ...]} + 时间戳——动态失败时用于写核心域名段兜底（复用动态历史值，非静态降级）
+        "last_dynamic_ips": {},
+        "last_dynamic_at": "",
         "current_ip": None,
         "history": [],
         "last_error": None,

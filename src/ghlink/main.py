@@ -186,6 +186,33 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
                     continue
                 entries[tgt] = cands
         if not ok_candidates or not entries:
+            # v0.4.3（李工 8 bug 点④ macOS 真机验收）：动态失败时优先用最近成功值缓存
+            # 兜底写核心域名段（复用动态历史值，非静态降级；超 24h 不写，避免陈旧 IP）
+            cached = st.get("last_dynamic_ips") or {}
+            cached_at = st.get("last_dynamic_at") or ""
+            cache_fresh = False
+            if cached and cached_at:
+                try:
+                    import time as _t
+
+                    ct = _t.mktime(_t.strptime(cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
+                    cache_fresh = 0 <= _t.time() - ct <= 86400  # 24h 内
+                except Exception:
+                    cache_fresh = False
+            if cache_fresh:
+                block = hosts_manager.build_combined_block(cached, github520_entries)
+                ok_apply, backup_path = hosts_manager.apply_block(
+                    block, _backup_dir(cfg, config_path)
+                )
+                st["state"] = "normal" if ok else "degraded"
+                st["last_error"] = (
+                    "dynamic resolver failed, cached dynamic IPs written "
+                    f"(age={(time.time() - ct) // 60:.0f}min)"
+                )
+                st.setdefault("candidate_sources", {})["dynamic"] = "failed(cache)"
+                st["candidate_sources"]["github520"] = "ok"
+                state.save(st_path, st)
+                return 0
             # v0.4.0（李工 12:35 点 1）：动态解析失败但有 github520 静态兜底 → 仍写静态段，
             # 不因动态失败就什么都不写（首装/断网场景保证 hosts 有可用条目）
             if github520_entries:
@@ -272,6 +299,9 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             st["probe"]["consecutive_failures"] = failed_before + 1
         st["state"] = "normal"
         st["verify_success"] = 0
+        # v0.4.3：动态解析成功 → 保存最近成功值缓存（动态失败时兜底写核心域名段）
+        st["last_dynamic_ips"] = {k: v for k, v in entries.items() if v}
+        st["last_dynamic_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         first_ip = next(iter(entries.values()))[0]
         st["current_ip"] = first_ip
         st["last_error"] = None

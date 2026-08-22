@@ -74,6 +74,15 @@ def _icon_path() -> str:
             "ghlink-icon.png",
         )
     )
+    # v0.4.3（李工 8 bug 点④ macOS 真机验收发现）：venv/pip 安装（package-data 进包）——
+    # 图标随包在 site-packages/ghlink/assets/，_icon_path 必须命中否则回退纯色非 LOGO
+    candidates.append(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "assets",
+            "ghlink-icon.png",
+        )
+    )
     for p in candidates:
         if os.path.exists(p):
             return p
