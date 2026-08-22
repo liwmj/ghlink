@@ -14,7 +14,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
-from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.4.0：首装断网/拉取失败兜底
+from .builtin_github520 import BUILTIN_GITHUB520_HOSTS  # v0.4.1：首装断网/拉取失败兜底
 
 # 拉取状态缓存文件（放 state 同目录）
 _CACHE_NAME = "ghlink520_cache.json"
@@ -29,7 +29,7 @@ def _cache_path(state_dir: str = "") -> str:
 
 def fetch_hosts(url: str, timeout_sec: float = 30) -> str:
     """拉取 GitHub520 hosts 文本（失败抛异常，由调用方降级）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.4.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ghlink/0.4.1"})
     with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
@@ -111,6 +111,21 @@ def load_cached(state_dir: str = "") -> Dict[str, List[str]]:
     return {}
 
 
+def cache_age(state_dir: str = "") -> float:
+    """v0.4.1：返回本地缓存年龄（秒）；无缓存/损坏返回超大值（视为过期需重拉）。"""
+    try:
+        path = _safe_cache_path(state_dir)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            ts = float(data.get("ts", 0))
+            if ts:
+                return time.time() - ts
+    except (OSError, ValueError):
+        pass
+    return float("inf")
+
+
 def save_cache(entries: Dict[str, List[str]], state_dir: str = "") -> None:
     """保存抽检后的缓存（供下次拉取失败兜底）。"""
     try:
@@ -131,7 +146,7 @@ def sync_github520(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[s
 
 
 def initial_entries(cfg: Dict[str, Any], state_dir: str = "") -> Dict[str, List[str]]:
-    """首装全量兜底（v0.4.0 新增，李工 12:35 点 1）：含全部域名（含核心），
+    """首装全量兜底（v0.4.1 新增，李工 12:35 点 1）：含全部域名（含核心），
     预检过的 IP 排前、未预检的排后——首装/动态失败时 hosts 必有可用条目。
     """
     return _sync(cfg, state_dir, include_core=True, full_write=True)
@@ -186,7 +201,7 @@ def _sync(
 def _sort_prechecked_first(
     entries: Dict[str, List[str]], timeout_sec: float = 5.0
 ) -> Dict[str, List[str]]:
-    """v0.4.0：全量写入时预检过的 IP 排前、未预检的排后（hosts 取首个命中）。"""
+    """v0.4.1：全量写入时预检过的 IP 排前、未预检的排后（hosts 取首个命中）。"""
     out: Dict[str, List[str]] = {}
     for domain, ips in entries.items():
         ok_ips = [ip for ip in ips if _ip_reachable(ip, timeout_sec)]
