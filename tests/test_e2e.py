@@ -93,7 +93,11 @@ class TestFullCycle:
         assert not any("consecutive failures" in t for t in triggers), f"无故障触发: {triggers}"
 
     def test_e004_all_sources_fail_keeps_config_degraded(self, tmp_path, monkeypatch):
-        """全源失败 → 不换配置 + 告警 + degraded。"""
+        """全源失败 → 有 github520 静态兜底则写静态段；无兜底才不写 + 告警 + degraded。
+
+        v0.4.0（李工 12:35 点 1/点 2）：动态失败不再什么都不写——github520 静态段
+        兜底写入（含核心域名，预检过排前），保证首装/断网场景 hosts 有可用条目。
+        """
         cfg_path = make_config(tmp_path)
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
@@ -107,9 +111,43 @@ class TestFullCycle:
             "ghlink.hosts_manager.apply_block",
             lambda block, backup_dir: applied.append(block) or (True, backup_dir),
         )
+        # mock github520 兜底有静态条目（首装全量语义）
+        g520 = {
+            "codeload.github.com": ["1.2.3.5"],
+            "raw.githubusercontent.com": ["1.2.3.6"],
+        }
+        monkeypatch.setattr("ghlink.github520.initial_entries", lambda cfg, sd: dict(g520))
+        monkeypatch.setattr("ghlink.hosts_manager.current_g520_entries", lambda: dict(g520))
         for _ in range(3):
             main.run(cfg_path)
-        assert applied == []  # 没有可用 IP，绝不写入
+        assert applied, "v0.4.0：动态失败但有 github520 静态兜底 → 写静态段"
+        last = applied[-1]
+        assert "# ghlink520 Start" in last  # 静态兜底段写入
+        assert "codeload.github.com" in last and "raw.githubusercontent.com" in last
+
+    def test_e004b_all_sources_fail_no_fallback_keeps_degraded(self, tmp_path, monkeypatch):
+        """全源失败且无 github520 兜底 → 不写 + 告警 + degraded（宁缺毋滥保留）。"""
+        cfg_path = make_config(tmp_path)
+        monkeypatch.setattr(
+            "ghlink.probe.probe_all",
+            lambda targets, timeout: {
+                t: {"ok": False, "latency_ms": 0, "error": "sim"} for t in targets
+            },
+        )
+        monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: [])
+        monkeypatch.setattr("ghlink.github520.initial_entries", lambda cfg, sd: {})
+        monkeypatch.setattr("ghlink.github520.sync_github520", lambda cfg, sd: {})
+        monkeypatch.setattr("ghlink.hosts_manager.current_g520_entries", lambda: {})
+        applied = []
+        monkeypatch.setattr(
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir: applied.append(block) or (True, backup_dir),
+        )
+        for _ in range(3):
+            main.run(cfg_path)
+        assert applied == []  # 无任何可用候选，绝不写入（宁缺毋滥）
+        st = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert st["state"] == "degraded"
 
     def test_e005_cooldown_no_repeat_alert(self, tmp_path, monkeypatch):
         """冷却期内重复失败 → 不重复切换、不重复告警。"""
