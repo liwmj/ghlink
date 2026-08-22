@@ -16,7 +16,7 @@ import shutil
 import sys
 import time
 
-from . import platform_adapter, state
+from . import hosts_manager, platform_adapter, state
 from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
 
 
@@ -123,6 +123,26 @@ def enable() -> int:
     # 上无效 → 状态文件写不进 → 心跳停 + hosts 不落盘。检测到平台无效路径时
     # 备份旧 config 并仅修正路径字段（保留 notify 等用户配置）。
     _migrate_legacy_paths()
+    # v0.4.0（李工 12:35 点 3）：enable 时检测 hosts 段落外预存的 GitHub 生态域名条目——
+    # first-match-wins 下可能与 ghlink 写入冲突。命中则告警 + 自动备份（用户记录不动）。
+    try:
+        dupes = hosts_manager.detect_external_dupes()
+        if dupes:
+            print(
+                "[ghlink] 警告：hosts 中检测到段落外预存的 GitHub 域名条目"
+                "（first-match-wins 下可能遮蔽 ghlink 写入）："
+            )
+            for d, ip in list(dupes.items())[:10]:
+                print(f"  - {d} -> {ip}")
+            if len(dupes) > 10:
+                print(f"  ... 等共 {len(dupes)} 条")
+            backup = platform_adapter.backup_hosts()
+            print(
+                f"[ghlink] 已自动备份原 hosts（{backup or '备份失败'}），"
+                "用户记录未改动；如需自定义请编辑后重新 enable"
+            )
+    except Exception:
+        pass  # 冲突检测失败不阻断 enable
     try:
         if sys.platform == "win32":
             return _enable_windows()
@@ -274,6 +294,11 @@ def status() -> int:
     print(f"当前IP: {cur_ip or '-'}")
     print(f"失败计数: {st.get('probe', {}).get('consecutive_failures', 0)}")
     print(f"最近错误: {st.get('last_error') or '-'}")
+    # v0.4.0：多源回退候选来源（candidate_sources 状态字段，degraded 可追溯）
+    cs = st.get("candidate_sources")
+    if cs:
+        cs_txt = " ".join(f"{k}={v}" for k, v in sorted(cs.items()))
+        print(f"候选来源: {cs_txt}")
     switched = st.get("last_switched_at") or st.get("switched_at")  # v0.2.18 方案④：兼容旧字段
     print(
         "上次切换: "
