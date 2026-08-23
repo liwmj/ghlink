@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # build_deb.sh — ghlink .deb 打包脚本（v0.2.0）
 # 用法: bash packaging/build_deb.sh  （在仓库根目录执行）
 # 输出: dist/ghlink_0.2.10-1_all.deb
