@@ -17,7 +17,7 @@ from typing import Any, Dict
 # pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
 from typing import Any as _Any
 
-from . import platform_adapter, service, state
+from . import __version__, platform_adapter, service, state
 
 HAS_TRAY = False
 try:
@@ -147,7 +147,8 @@ def _status_text() -> str:
     st = _load_state()
     s = st.get("state", "normal")
     txt = _TEXT.get(s, s)
-    return f"状态: {txt} ｜ {service._watch_status_text()}"
+    # v0.4.10（李工 22:53 需求）：第一行状态文本加版本号，一眼确认版本
+    return f"ghlink v{__version__} ｜ 状态: {txt} ｜ {service._watch_status_text()}"
 
 
 def _make_icon(color: str, size: int = 64):
