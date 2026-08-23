@@ -17,7 +17,7 @@ from typing import Any, Dict
 # pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
 from typing import Any as _Any
 
-from . import service, state
+from . import platform_adapter, service, state
 
 HAS_TRAY = False
 try:
@@ -261,7 +261,7 @@ def _run_privileged(subcmd: str) -> bool:
     """
     cmd = _cli_command(subcmd)
     try:
-        if sys.platform == "win32" and not service._is_admin():
+        if sys.platform == "win32" and not platform_adapter._is_admin():
             import ctypes
 
             params = " ".join(f'"{a}"' for a in cmd)
