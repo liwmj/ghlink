@@ -156,6 +156,9 @@ jobs:
       - name: Build pkg (Cask .app + CLI symlink)
         run: |
           bash packaging/macos/build_pkg.sh
+          # 输出 pkg sha256 供 Cask 同步使用
+          PKG_FILE="$(ls dist/macos/ghlink-*.pkg | head -1)"
+          echo "PKG_SHA256=$(shasum -a 256 "$PKG_FILE" | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Sync Cask to tap (homebrew-tap)
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -164,6 +167,9 @@ jobs:
           TAP_REPO="liwmj/homebrew-tap"
           TAG="${GITHUB_REF#refs/tags/}"
           git clone "https://x-access-token:***}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          # 替换 Cask 中的 sha256 占位符为真实 pkg sha256
+          sed -i "s/REPLACE_WITH_PKG_SHA256/${PKG_SHA256}/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
           git config user.name "ghlink-bot"
