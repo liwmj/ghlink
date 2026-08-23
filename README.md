@@ -54,7 +54,7 @@
 - 🛡️ **安全红线**：写入前备份 hosts、写入后自检、自检失败回滚——**宁可不变，不能改坏**
 - ⏱️ **冷却防抖**：切换成功后 15 分钟冷却期，避免 IP 抖动导致频繁切换
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
-- 🔔 **多渠道告警**：切换、降级、回滚事件实时通知（飞书 / 钉钉 / 企业微信 / Telegram / 通用 Webhook 可配），冷却期去重，发送失败不阻断主流程
+- 🔔 **飞书告警**：切换、降级、回滚事件实时通知（飞书 Webhook 已实现；钉钉 / 企业微信 / Telegram / 通用 Webhook 规划中），冷却期去重，发送失败不阻断主流程
 - 💻 **跨平台**：macOS / Windows / Linux 一套代码，平台差异收敛到单一适配层
 - 📦 **零第三方依赖**：纯 Python 标准库实现，运行无需任何第三方包
 
@@ -97,7 +97,7 @@ src/ghlink/
 ├── resolver.py          # 多 DoH + 系统 DNS 多数票 + 443 预检 + 缓存兜底
 ├── hosts_manager.py     # 段落式写入 / 备份 / 自检 / 回滚
 ├── state.py             # 状态文件原子写
-├── notifier.py          # 多渠道通知（Webhook / 飞书 / 钉钉 / 企业微信等，冷却去重，失败不阻断）
+├── notifier.py          # 飞书通知（Webhook，冷却去重，失败不阻断；多渠道规划中）
 ├── lock.py              # 跨平台防重入锁（flock / msvcrt / PID 文件）
 └── main.py              # 单轮执行闭环（探测→判定→自愈→确认）
 ```
@@ -182,8 +182,10 @@ cp config.example.json config.json
 ```bash
 cp config.example.json config.json
 # 编辑 config.json：
-#   - notify.channel：通知渠道（webhook / feishu / dingtalk / wecom / telegram，可选，默认关）
+#   - notify.feishu_webhook：飞书群机器人 Webhook 地址（配置后启用告警，空=关闭）
+#   - notify.enabled：告警开关（默认 true）
 #   - probe.targets：探测域名清单（默认 github.com / api.github.com 等）
+# 注：钉钉 / 企业微信 / Telegram / 通用 Webhook 等渠道规划中，后续版本支持
 ```
 
 ### 手动运行一次
@@ -271,8 +273,8 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 | `resolver` | `doh_sources` | 阿里/腾讯/CF/Google | DoH 源 URL 列表 |
 | `resolver` | `cache_ttl_sec` | 3600 | 本地 IP 缓存有效期 |
 | `resolver` | `max_candidates` | 5 | 候选 IP 上限 |
-| `notify` | `channel` | 关 | 通知渠道（webhook / feishu / dingtalk / wecom / telegram） |
-| `notify` | `webhook_url` | 空 | 通用 Webhook URL / 各渠道机器人地址（可选，配置后启用通知） |
+| `notify` | `feishu_webhook` | 空 | 飞书群机器人 Webhook 地址（配置后启用告警；钉钉/企微/Telegram/通用 Webhook 规划中） |
+| `notify` | `enabled` | true | 告警开关 |
 
 ---
 
