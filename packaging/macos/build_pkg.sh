@@ -39,9 +39,15 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 "$PYTHON_BIN" -m pip install --target "$APP/Contents/libexec/vendor" --quiet pystray Pillow
 
 # CLI 可执行（内嵌 .app，sudoers 放行此路径）
+# 相对化：APP_DIR 动态推导（不写死构建机路径，v0.4.12 Bug 1 修复）
+# python 版本锁定：优先 python@3.14（vendor 以 3.14 编译，Bug 2 修复）
 cat > "$APP/Contents/MacOS/ghlink" <<EOF
 #!/bin/bash
-export PYTHONPATH="/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor"
+APP_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
+export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
+  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
+done
 exec "/usr/local/bin/python3" -m ghlink.main "\$@"
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
@@ -49,7 +55,11 @@ chmod 0755 "$APP/Contents/MacOS/ghlink"
 # 托盘入口（双击启动）
 cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
 #!/bin/bash
-export PYTHONPATH="/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor"
+APP_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
+export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
+  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
+done
 exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
