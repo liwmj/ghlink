@@ -35,10 +35,12 @@ except Exception:  # pragma: no cover - 未装依赖时
     ImageDraw = None
     HAS_TRAY = False
 
-# 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
+# 状态 → 图标颜色（v0.4.8 李工 20:28 拍板）
+# 灰=值守未启用（最高优先）｜值守启用时：红=degraded、黄=切换验证中、蓝=正常未自启动、绿=正常+自启动
 _COLOR = {
-    "normal": "#34C759",  # 绿=值守启用且正常（李工 12:58 定规：绿=值守启用）
-    "idle": "#007AFF",  # 蓝=正常但值守未启用（区别于绿）
+    "normal": "#34C759",  # 绿=值守启用且正常+开机自启动
+    "idle": "#007AFF",  # 蓝=值守启用且正常，但未开机自启动
+    "disabled": "#8E8E93",  # 灰=值守未启用（停用态，最高优先）
     "verifying": "#FFD60A",  # 黄=切换/验证中
     "switching": "#FFD60A",
     "degraded": "#FF3B30",  # 红=异常
@@ -186,22 +188,27 @@ def _make_icon(color: str, size: int = 64):
 
 
 def _state_color() -> str:
-    """状态灯四色判定（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    """状态灯判定（v0.4.8 李工 20:28 拍板）：灰=值守未启用（最高优先）；
+    值守启用时：红=degraded > 黄=切换中 > 蓝=正常未自启动 > 绿=正常+自启动。
 
     v0.2.19（李工 8 条④）：初始图标与 _refresh 共用此判定，不再各自为政——
     修复 Windows 托盘启动瞬间「绿角标+菜单未运行」不匹配（原 main() 只看 state
     映射，没判断值守是否启用）。
+    v0.4.8（李工 20:28）：值守未启用时优先显示灰（停用态），不显示状态残留；
+    蓝/绿区分自启动——蓝=值守正常但未开机自启动，绿=值守正常+开机自启动。
     """
     st = _load_state()
     s = st.get("state", "normal")
     watching = service._is_enabled()
+    if not watching:
+        return _COLOR["disabled"]  # 灰=值守未启用（最高优先，不看状态残留）
     if s in ("degraded",):
-        return _COLOR["degraded"]  # 异常红（最高优先）
+        return _COLOR["degraded"]  # 异常红
     if s in ("verifying", "switching"):
         return _COLOR["verifying"]  # 切换/验证中黄
-    if watching:
-        return _COLOR["normal"]  # 值守启用且正常绿
-    return _COLOR["idle"]  # 正常但值守未启用蓝
+    if service._is_autostart():
+        return _COLOR["normal"]  # 值守正常+开机自启动绿
+    return _COLOR["idle"]  # 值守正常但未开机自启动蓝
 
 
 def _refresh(icon: Any) -> None:
@@ -491,11 +498,7 @@ def _build_menu():
             # v0.2.17（李工 21:45 反馈）：去掉 default——左键右键都弹菜单，
             # 只有点击菜单里的 IP 项才复制（default=True 时左键单击直接复制）
         ),
-        pystray.MenuItem(
-            lambda _: f"值守: {'运行中' if watching else '未运行'}",
-            None,
-            enabled=False,
-        ),
+        # v0.4.8（李工 20:21）：删独立值守行——第一行综合状态已含值守信息，不重复
         pystray.Menu.SEPARATOR,
         # v0.4.5（李工需求）：托盘菜单直接操作值守开关。
         # v0.4.6（李工拍板）：自启动开启时「关闭值守」置灰+「启用值守」勾选，
@@ -506,9 +509,11 @@ def _build_menu():
             checked=lambda _: watching or locked_on,
             enabled=lambda _: not (watching or locked_on),
         ),
+        # v0.4.8（李工 20:21）：补 checked 互斥勾选——值守停止时「关闭值守」打勾
         pystray.MenuItem(
             "关闭值守",
             _disable_watch,
+            checked=lambda _: not (watching or locked_on),
             enabled=lambda _: watching and not locked_on,
         ),
         pystray.Menu.SEPARATOR,
