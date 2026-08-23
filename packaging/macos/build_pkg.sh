@@ -1,14 +1,19 @@
 #!/bin/bash
-# ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-23 17:30 拍板 C）
+# ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-24 01:03 终裁 D1/D2/D3）
+#
+# 终裁口径：
+#   D1 = cask 单轨（formula deprecate 退役）
+#   D2 = .app 内嵌 CLI + /usr/local/bin/ghlink symlink（对齐 sudoers 放行，防提权断链）
+#   D3 = uninstall 钩子调 ghlink uninstall（停任务+还原 hosts+删配置，彻底）
 #
 # 产物：dist/macos/ghlink-<VERSION>.pkg
 # 内容：
-#   - CLI: /usr/local/bin/ghlink（brew 兼容 wrapper 或直接 bin）
-#   - App: /Applications/ghlink.app（双击启动托盘，带 LOGO 图标）
-#   - 配置模板: /usr/local/etc/ghlink/config.json（首次安装默认）
+#   - App: /Applications/ghlink.app（双击启动托盘，LOGO 图标，内嵌 CLI）
+#   - CLI symlink: /usr/local/bin/ghlink -> /Applications/ghlink.app/Contents/MacOS/ghlink
+#   - 配置模板: /usr/local/etc/ghlink/config.json
 #
 # 用法: bash packaging/macos/build_pkg.sh
-# 依赖: pkgbuild + productbuild（macOS 自带，无需第三方）
+# 依赖: pkgbuild + productbuild（macOS 自带）
 
 set -e
 
@@ -20,28 +25,37 @@ APP_NAME="ghlink.app"
 
 echo "==> 清理旧构建"
 rm -rf "$STAGE" "$PKG_OUT"
-mkdir -p "$STAGE/root/usr/local/bin" "$STAGE/root/usr/local/etc/ghlink" "$STAGE/root/Applications" "$PKG_OUT"
+mkdir -p "$STAGE/root/usr/local/etc/ghlink" "$STAGE/root/Applications" "$PKG_OUT"
 
-echo "==> 组装 CLI wrapper（brew 同款：PYTHONPATH 注入 libexec + vendor）"
-mkdir -p "$STAGE/root/usr/local/libexec/ghlink" "$STAGE/root/usr/local/libexec/assets" "$STAGE/root/usr/local/libexec/vendor"
-cp "$ROOT"/src/ghlink/*.py "$STAGE/root/usr/local/libexec/ghlink/"
-cp "$ROOT/config.example.json" "$STAGE/root/usr/local/libexec/"
-cp "$ROOT/assets/ghlink-icon.png" "$STAGE/root/usr/local/libexec/assets/"
+echo "==> 组装 .app（内嵌 CLI + 托盘，D2）"
+APP="$STAGE/root/Applications/$APP_NAME"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/libexec/ghlink" "$APP/Contents/libexec/assets" "$APP/Contents/libexec/vendor"
+cp "$ROOT"/src/ghlink/*.py "$APP/Contents/libexec/ghlink/"
+cp "$ROOT/config.example.json" "$APP/Contents/libexec/"
+cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
 
-# vendor 依赖（托盘 pystray + Pillow）注入安装包，核心零依赖
+# vendor 依赖（托盘 pystray + Pillow）注入 .app，核心零依赖
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install --target "$STAGE/root/usr/local/libexec/vendor" --quiet pystray Pillow
+"$PYTHON_BIN" -m pip install --target "$APP/Contents/libexec/vendor" --quiet pystray Pillow
 
-cat > "$STAGE/root/usr/local/bin/ghlink" <<EOF
+# CLI 可执行（内嵌 .app，sudoers 放行此路径）
+cat > "$APP/Contents/MacOS/ghlink" <<EOF
 #!/bin/bash
-export PYTHONPATH="/usr/local/libexec:/usr/local/libexec/vendor"
+export PYTHONPATH="$APP/Contents/libexec:$APP/Contents/libexec/vendor"
 exec "/usr/local/bin/python3" -m ghlink.main "\$@"
 EOF
-chmod 0755 "$STAGE/root/usr/local/bin/ghlink"
+chmod 0755 "$APP/Contents/MacOS/ghlink"
 
-echo "==> 组装 .app（双击启动托盘）"
-mkdir -p "$STAGE/root/Applications/$APP_NAME/Contents/MacOS" "$STAGE/root/Applications/$APP_NAME/Contents/Resources"
-cat > "$STAGE/root/Applications/$APP_NAME/Contents/Info.plist" <<'PLIST'
+# 托盘入口（双击启动）
+cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
+#!/bin/bash
+export PYTHONPATH="$APP/Contents/libexec:$APP/Contents/libexec/vendor"
+exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
+EOF
+chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
+
+# Info.plist
+cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -55,12 +69,6 @@ cat > "$STAGE/root/Applications/$APP_NAME/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>10.15</string>
 </dict></plist>
 PLIST
-cat > "$STAGE/root/Applications/$APP_NAME/Contents/MacOS/ghlink-tray" <<EOF
-#!/bin/bash
-export PYTHONPATH="/usr/local/libexec:/usr/local/libexec/vendor"
-exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
-EOF
-chmod 0755 "$STAGE/root/Applications/$APP_NAME/Contents/MacOS/ghlink-tray"
 
 # 图标：png → icns（sips + iconutil）
 ICON_PNG="$ROOT/assets/ghlink-icon.png"
@@ -70,9 +78,13 @@ for sz in 16 32 128 256 512; do
   sips -z $sz $sz "$ICON_PNG" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null 2>&1
   sips -z $((sz*2)) $((sz*2)) "$ICON_PNG" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null 2>&1
 done
-iconutil -c icns "$ICONSET" -o "$STAGE/root/Applications/$APP_NAME/Contents/Resources/ghlink-icon.icns"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ghlink-icon.icns"
 
-echo "==> 配置模板（首次安装默认，enable 时自动生成）"
+echo "==> CLI symlink（/usr/local/bin/ghlink -> .app 内 CLI，D2）"
+mkdir -p "$STAGE/root/usr/local/bin"
+ln -s "/Applications/$APP_NAME/Contents/MacOS/ghlink" "$STAGE/root/usr/local/bin/ghlink"
+
+echo "==> 配置模板"
 cp "$ROOT/config.example.json" "$STAGE/root/usr/local/etc/ghlink/config.json"
 
 echo "==> pkgbuild（root payload）"
