@@ -10,3 +10,6 @@ dist/
 build/
 *.egg-info/
 *.local.*
+# 临时文件（v0.4.8：误提交 _log43.txt 教训，临时日志/临时 json 不入库）
+_log*.txt
+_*.json
