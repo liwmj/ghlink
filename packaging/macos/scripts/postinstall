@@ -1,0 +1,19 @@
+#!/bin/bash
+# ghlink pkg postinstall（v0.4.12 Cask 方案）
+#
+# 职责：
+#   1. 注册 LaunchDaemon 模板（enable 时由 ghlink 正式注册，这里只保证可执行权限）
+#   2. 确保 CLI wrapper 可执行
+#   3. 刷新 mds（可选，非必须）
+
+set -e
+
+# CLI wrapper 权限
+chmod 0755 /usr/local/bin/ghlink 2>/dev/null || true
+chmod 0755 /Applications/ghlink.app/Contents/MacOS/ghlink-tray 2>/dev/null || true
+
+# 配置目录权限（root 属主，用户可读）
+chown -R root:wheel /usr/local/etc/ghlink 2>/dev/null || true
+chmod 0644 /usr/local/etc/ghlink/config.json 2>/dev/null || true
+
+exit 0
