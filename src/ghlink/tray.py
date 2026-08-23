@@ -224,7 +224,10 @@ def _cli_command(subcmd: str) -> list:
     """构造 CLI 子命令（enable/disable）完整命令（P1-1：必须走 CLI 入口）。
 
     - frozen（PyInstaller）：ghlink.exe enable/disable（ghlink.exe 是 console CLI 入口）
-    - dev：python -m ghlink.main enable/disable
+    - dev：优先用已安装的 ghlink 可执行文件（venv/bin/ghlink 或 PATH 命中），
+      与 sudoers NOPASSWD 窄放行路径对齐；找不到才退回 python -m ghlink.main
+      （v0.4.6：顾笙 macOS 实测发现 sudoers 放行 ghlink 可执行文件，但托盘走
+      python -m 不匹配 → sudo 要密码 → 提权静默失败 → 菜单点了没反应）
     不能用托盘入口（ghlink-tray.exe / tray.main）——托盘不解析 argv，拉起只会新开托盘实例。
     """
     if getattr(sys, "frozen", False):
@@ -232,6 +235,19 @@ def _cli_command(subcmd: str) -> list:
         if os.path.exists(exe):
             return [exe, subcmd]
         # 兜底：frozen 但找不到 ghlink.exe（异常环境），退回当前解释器 + -m
+    # v0.4.6（顾笙 13:57 根因）：非 frozen 环境优先找 ghlink 可执行文件，
+    # 对齐 sudoers 放行路径（macOS venv: .venv/bin/ghlink；Windows: Scripts/ghlink.exe）
+    import shutil as _shutil
+
+    for cand in (
+        os.path.join(os.path.dirname(sys.executable), "ghlink"),  # venv/bin/ghlink
+        os.path.join(os.path.dirname(sys.executable), "ghlink.exe"),  # Windows Scripts
+    ):
+        if os.path.exists(cand):
+            return [cand, subcmd]
+    which = _shutil.which("ghlink")
+    if which:
+        return [which, subcmd]
     return [sys.executable, "-m", "ghlink.main", subcmd]
 
 
@@ -297,11 +313,11 @@ def _quit_tray(icon: Any, item: Any) -> None:
 
 
 def _toggle_autostart(icon: Any, item: Any) -> None:
-    """开机自启动开关（李工 23:37 定规）：控制托盘是否随登录自动启动。
+    """开机自启动开关（李工 13:56 拍板：开自启动=开值守，自启动=值守总开关）。
 
-    注意：托盘=值守总开关（方案 A）——打开托盘值守已启动，此开关只控制
-    「登录时是否自动拉起托盘」（Windows Run key / macOS LaunchAgent），
-    不控制值守本身。
+    开启：注册登录自启 + 立即 enable 值守（不等下次登录）→ 角标转绿；
+    此时「关闭值守」菜单项灰掉（锁定开启态），避免自启动与值守状态矛盾。
+    关闭：移除登录自启，值守保持当前状态（可由菜单/命令行自由开关）。
     """
     try:
         if service._is_autostart():
@@ -309,9 +325,25 @@ def _toggle_autostart(icon: Any, item: Any) -> None:
             msg = "开机自启动已关闭" if ok else "关闭失败"
         else:
             ok = service._enable_autostart()
-            msg = "开机自启动已开启" if ok else "开启失败"
-        if not ok:
-            _notify(icon, msg)
+            if ok:
+                # 开自启动 = 同时启值守（李工语义），立即生效不等下次登录
+                if service._is_enabled():
+                    msg = "开机自启动已开启，值守运行中"
+                elif _run_privileged("enable"):
+                    for _ in range(10):
+                        if service._is_enabled():
+                            break
+                        time.sleep(0.5)
+                    msg = (
+                        "开机自启动已开启，值守已启用"
+                        if service._is_enabled()
+                        else "开机自启动已开启（值守启用中）"
+                    )
+                else:
+                    msg = "开机自启动已开启（值守启用失败，可点菜单启用）"
+            else:
+                msg = "开启失败"
+        _notify(icon, msg)
     except Exception as exc:  # pragma: no cover
         _notify(icon, f"操作失败: {exc}")
     finally:
@@ -447,6 +479,10 @@ def _copy_ip(icon: Any, item: Any) -> None:
 def _build_menu():
     watching = service._is_enabled()
     autostart = service._is_autostart()
+    # v0.4.6（李工 13:56 拍板）：自启动=值守总开关——
+    # 自启动开启时值守锁定为启用态，「关闭值守」置灰（不可点），
+    # 「启用值守」勾选显示开启；自启动关闭时菜单自由操作。
+    locked_on = autostart
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
@@ -462,22 +498,22 @@ def _build_menu():
         ),
         pystray.Menu.SEPARATOR,
         # v0.4.5（李工需求）：托盘菜单直接操作值守开关。
-        # 启用/停用两项互斥置灰——已启用时「启用值守」灰+勾选，
-        # 未启用时「关闭值守」灰，操作意图一目了然。
+        # v0.4.6（李工拍板）：自启动开启时「关闭值守」置灰+「启用值守」勾选，
+        # 值守锁定开启态；未启用时「关闭值守」灰，操作意图一目了然。
         pystray.MenuItem(
             "启用值守",
             _enable_watch,
-            checked=lambda _: watching,
-            enabled=lambda _: not watching,
+            checked=lambda _: watching or locked_on,
+            enabled=lambda _: not (watching or locked_on),
         ),
         pystray.MenuItem(
             "关闭值守",
             _disable_watch,
-            enabled=lambda _: watching,
+            enabled=lambda _: watching and not locked_on,
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
-            "开机自启动（随登录启动托盘）",
+            "开机自启动（随登录启动托盘+值守）",
             _toggle_autostart,
             checked=lambda _: autostart,
         ),
