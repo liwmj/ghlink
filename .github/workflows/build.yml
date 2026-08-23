@@ -144,7 +144,7 @@ jobs:
           ghlink status
 
   build-macos-pkg:
-    name: macOS pkg (Cask, v0.4.12)
+    name: macOS pkg (Cask, v0.4.13)
     runs-on: macos-latest
     needs: [build-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
