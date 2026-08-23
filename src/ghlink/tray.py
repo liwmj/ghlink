@@ -240,7 +240,8 @@ def _run_privileged(subcmd: str) -> bool:
 
     避免直接调 service.enable/disable——ensure_privilege() 提权成功会 sys.exit(0)
     退出当前进程，托盘会被误杀。Windows 走 ShellExecuteW runas 提权；
-    已具管理员权限时直接 subprocess 跑。
+    macOS/Linux 非 root 接 sudo -n（v0.4.5：复用李工已配的 sudoers NOPASSWD
+    窄放行）；已具权限时直接 subprocess 跑。
     """
     cmd = _cli_command(subcmd)
     try:
@@ -250,6 +251,13 @@ def _run_privileged(subcmd: str) -> bool:
             params = " ".join(f'"{a}"' for a in cmd)
             ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", cmd[0], params, None, 1)
             return ret > 32
+        import os as _os
+
+        # v0.4.5（李工拍板决策点 2）：macOS/Linux 托盘是用户态进程，
+        # enable/disable 需要 root——非 root 时前置 sudo -n（已配 NOPASSWD，
+        # 不弹密码；未配置时静默失败由调用方提示）。
+        if sys.platform != "win32" and hasattr(_os, "geteuid") and _os.geteuid() != 0:
+            cmd = ["sudo", "-n"] + cmd
         import subprocess
 
         kwargs: dict = {}
@@ -262,14 +270,15 @@ def _run_privileged(subcmd: str) -> bool:
 
 
 def _quit_tray(icon: Any, item: Any) -> None:
-    """退出托盘 = 停值守（方案 A 语义：托盘=值守总开关）。
+    """退出托盘（v0.4.5 李工拍板）：通用=仅退出 UI，Windows 特例=同时停值守。
 
-    确认提示 → disable（独立提权进程，UAC 一次）→ 托盘退出。
+    - macOS/Linux：退出托盘不再停值守（值守状态由菜单「启用值守/关闭值守」显式控制）
+    - Windows（李工特例）：保持原方案 A 语义——退出托盘 = 停值守，确认提示后 disable
     """
     try:
-        import ctypes as _ct
-
         if sys.platform == "win32":
+            import ctypes as _ct
+
             ret = _ct.windll.user32.MessageBoxW(
                 None,
                 "退出托盘将同时停用 ghlink 值守。确定退出？",
@@ -278,17 +287,10 @@ def _quit_tray(icon: Any, item: Any) -> None:
             )
             if ret != 6:  # IDYES
                 return
-        elif sys.platform == "darwin":
-            # macOS 无 MessageBoxW：用 notification + 延时确认（简单版）
-            try:
-                icon.notify("退出托盘将同时停用 ghlink 值守", "ghlink")
-                time.sleep(2)
-            except Exception:
-                pass
-        # 2026-08-17 口径对齐：退出=停值守，查平台任务注册（残留清理语义）
-        # 不能用新 _is_enabled()（托盘进程+心跳双确认）——僵尸场景会漏清
-        if service._is_registered():
-            _run_privileged("disable")
+            # 2026-08-17 口径对齐：退出=停值守，查平台任务注册（残留清理语义）
+            # 不能用新 _is_enabled()（托盘进程+心跳双确认）——僵尸场景会漏清
+            if service._is_registered():
+                _run_privileged("disable")
     except Exception:
         pass
     icon.stop()
@@ -312,6 +314,61 @@ def _toggle_autostart(icon: Any, item: Any) -> None:
             _notify(icon, msg)
     except Exception as exc:  # pragma: no cover
         _notify(icon, f"操作失败: {exc}")
+    finally:
+        _refresh(icon)
+
+
+def _enable_watch(icon: Any, item: Any) -> None:
+    """启用值守（v0.4.5 李工需求：托盘菜单直接操作）。
+
+    提权独立进程执行 enable（Windows 弹 UAC / macOS sudo -n），
+    成功后刷新菜单与图标角标（蓝→绿）。
+    """
+    try:
+        if service._is_enabled():
+            _notify(icon, "值守已在运行")
+            return
+        if _run_privileged("enable"):
+            # ShellExecuteW runas 异步启动提权进程：给 enable 落盘一点时间
+            for _ in range(10):
+                if service._is_enabled():
+                    break
+                time.sleep(0.5)
+            if service._is_enabled():
+                _notify(icon, "值守已启用")
+            else:
+                _notify(icon, "启用指令已发出，等待生效")
+        else:
+            _notify(icon, "启用失败（权限被拒？）")
+    except Exception as exc:  # pragma: no cover
+        _notify(icon, f"启用失败: {exc}")
+    finally:
+        _refresh(icon)
+
+
+def _disable_watch(icon: Any, item: Any) -> None:
+    """关闭值守（v0.4.5 李工需求：托盘菜单直接操作）。
+
+    提权独立进程执行 disable（保留 hosts 与配置，李工 2026-08-22 19:31 终裁语义），
+    成功后刷新菜单与图标角标（绿→蓝）。
+    """
+    try:
+        if not service._is_enabled():
+            _notify(icon, "值守本就未运行")
+            return
+        if _run_privileged("disable"):
+            for _ in range(10):
+                if not service._is_enabled():
+                    break
+                time.sleep(0.5)
+            if not service._is_enabled():
+                _notify(icon, "值守已停用")
+            else:
+                _notify(icon, "停用指令已发出，等待生效")
+        else:
+            _notify(icon, "停用失败（权限被拒？）")
+    except Exception as exc:  # pragma: no cover
+        _notify(icon, f"停用失败: {exc}")
     finally:
         _refresh(icon)
 
@@ -402,6 +459,21 @@ def _build_menu():
             lambda _: f"值守: {'运行中' if watching else '未运行'}",
             None,
             enabled=False,
+        ),
+        pystray.Menu.SEPARATOR,
+        # v0.4.5（李工需求）：托盘菜单直接操作值守开关。
+        # 启用/停用两项互斥置灰——已启用时「启用值守」灰+勾选，
+        # 未启用时「关闭值守」灰，操作意图一目了然。
+        pystray.MenuItem(
+            "启用值守",
+            _enable_watch,
+            checked=lambda _: watching,
+            enabled=lambda _: not watching,
+        ),
+        pystray.MenuItem(
+            "关闭值守",
+            _disable_watch,
+            enabled=lambda _: watching,
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
