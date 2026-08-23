@@ -117,13 +117,13 @@ jobs:
           ruby -c packaging/brew/ghlink.rb
       # v0.4.7（李工反馈 brew 停在 0.2.18）：发版时自动同步 formula 到 tap 仓库，
       # 杜绝「Release 发了 brew 没跟进」的通道缺口（此前仅校验不推送）
-      - name: Sync formula to tap (homebrew-ghlink)
+      - name: Sync formula to tap (homebrew-tap)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           set -e
-          TAP_REPO="liwmj/homebrew-ghlink"
+          TAP_REPO="liwmj/homebrew-tap"
           TAG="${GITHUB_REF#refs/tags/}"
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           cp packaging/brew/ghlink.rb "$RUNNER_TEMP/tap/Formula/ghlink.rb"
