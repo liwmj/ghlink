@@ -294,8 +294,16 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             verify_targets = [t for t in entries if t in core_targets] or list(entries.keys())
             st["state"] = "verifying"
             if not hosts_manager.verify_after_apply(verify_targets, timeout):
-                # P0-1: 自检失败 → 立即回滚 + degraded（坏配置绝不留场）
+                # P0-1: 自检失败 → 回滚动态段 + 保留/重建 GitHub520 静态段
+                # （李工 22:12 语义：回滚不清空 ghlink hosts，静态兜底 IP 保留；
+                #  卸载才彻底清理——回滚≠卸载）
                 hosts_manager.rollback(backup_path)
+                if github520_entries:
+                    # 重建静态兜底段（非核心域名），核心域名回退系统 DNS
+                    static_block = hosts_manager.build_combined_block({}, github520_entries)
+                    hosts_manager.apply_block(
+                        static_block, _backup_dir(cfg, config_path), preserve_g520=True
+                    )
                 st["state"] = "degraded"
                 st["last_error"] = "verify failed after apply, rolled back"
                 if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):

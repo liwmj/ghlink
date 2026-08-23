@@ -67,7 +67,8 @@ class TestDomainHealth:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -123,7 +124,8 @@ class TestDomainHealth:
         monkeypatch.setattr("ghlink.probe.probe_all", flaky)
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -146,7 +148,8 @@ class TestDomainHealth:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
