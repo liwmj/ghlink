@@ -124,19 +124,20 @@ ghlink 的语义模型（替代 2026-08-16 版「托盘=值守总开关」）：
 
 ### 安装（各系统）
 
-**macOS（Homebrew tap，推荐）**
+**macOS（Homebrew Cask，推荐）**
 
 ```bash
 # 方式一：信任 tap 后安装（Homebrew 4.x 起第三方 tap 默认不可信，必须先 trust）
 brew tap liwmj/tap
-brew trust liwmj/tap        # 或 brew trust --formula liwmj/tap/ghlink
-brew install ghlink
+brew trust liwmj/tap
+brew install --cask ghlink
 
-# 方式二：若已 tap 但 install 报 Refusing to load formula ... untrusted tap
-brew trust --formula liwmj/tap/ghlink && brew install ghlink
+# 方式二：若已 tap 但报 Refusing to load ... untrusted tap
+brew trust liwmj/tap && brew install --cask ghlink
 ```
 
 > tap 仓库：liwmj/homebrew-tap（2026-08-23 由 homebrew-ghlink 更名，多包通用 tap）
+> v0.4.12 起 cask 单轨（formula 已 deprecate）：安装为 /Applications/ghlink.app（托盘 GUI + 内嵌 CLI symlink /usr/local/bin/ghlink），卸载用 brew uninstall --cask ghlink 彻底清理
 
 **Windows（安装向导 / 裸 exe）**
 
