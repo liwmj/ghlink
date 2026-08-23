@@ -1,5 +1,5 @@
 cask "ghlink" do
-  version "0.4.12"
+  version "0.4.13"
   sha256 "REPLACE_WITH_PKG_SHA256"
 
   url "https://github.com/liwmj/ghlink/releases/download/v#{version}/ghlink-#{version}.pkg",

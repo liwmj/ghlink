@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-24 01:03 终裁 D1/D2/D3）
 #
 # 终裁口径：
@@ -17,7 +17,7 @@
 
 set -e
 
-VERSION="0.4.12"
+VERSION="0.4.13"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STAGE="$ROOT/build/macos-pkg"
 PKG_OUT="$ROOT/dist/macos"
@@ -43,7 +43,17 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 # python 版本锁定：优先 python@3.14（vendor 以 3.14 编译，Bug 2 修复）
 cat > "$APP/Contents/MacOS/ghlink" <<EOF
 #!/bin/bash
-APP_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
+# symlink 解析链（v0.4.13 修复）：/usr/local/bin/ghlink 是 symlink，\$0 解析到
+# symlink 路径导致 APP_DIR 推导错——先 readlink 循环解析到真实脚本路径再推导
+SELF="\$0"
+while [ -L "\$SELF" ]; do
+  LINK="\$(readlink "\$SELF")"
+  case "\$LINK" in
+    /*) SELF="\$LINK" ;;
+    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+  esac
+done
+APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
 export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
   [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
@@ -55,7 +65,15 @@ chmod 0755 "$APP/Contents/MacOS/ghlink"
 # 托盘入口（双击启动）
 cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
 #!/bin/bash
-APP_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
+SELF="\$0"
+while [ -L "\$SELF" ]; do
+  LINK="\$(readlink "\$SELF")"
+  case "\$LINK" in
+    /*) SELF="\$LINK" ;;
+    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+  esac
+done
+APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
 export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
   [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
