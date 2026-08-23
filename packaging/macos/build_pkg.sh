@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-24 01:03 终裁 D1/D2/D3）
 #
 # 终裁口径：
