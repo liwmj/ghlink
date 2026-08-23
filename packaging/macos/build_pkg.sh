@@ -41,7 +41,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 # CLI 可执行（内嵌 .app，sudoers 放行此路径）
 cat > "$APP/Contents/MacOS/ghlink" <<EOF
 #!/bin/bash
-export PYTHONPATH="$APP/Contents/libexec:$APP/Contents/libexec/vendor"
+export PYTHONPATH="/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor"
 exec "/usr/local/bin/python3" -m ghlink.main "\$@"
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
@@ -49,7 +49,7 @@ chmod 0755 "$APP/Contents/MacOS/ghlink"
 # 托盘入口（双击启动）
 cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
 #!/bin/bash
-export PYTHONPATH="$APP/Contents/libexec:$APP/Contents/libexec/vendor"
+export PYTHONPATH="/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor"
 exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
