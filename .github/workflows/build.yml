@@ -143,6 +143,44 @@ jobs:
           ghlink --version
           ghlink status
 
+  build-macos-pkg:
+    name: macOS pkg (Cask, v0.4.12)
+    runs-on: macos-latest
+    needs: [build-sdist]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build pkg (Cask .app + CLI symlink)
+        run: |
+          bash packaging/macos/build_pkg.sh
+      - name: Sync Cask to tap (homebrew-tap)
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -e
+          TAP_REPO="liwmj/homebrew-tap"
+          TAG="${GITHUB_REF#refs/tags/}"
+          git clone "https://x-access-token:***}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
+          cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "ghlink-bot"
+          git config user.email "ghlink@users.noreply.github.com"
+          git add Casks/ghlink.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync cask to ${TAG}"
+            git push origin HEAD:master
+          else
+            echo "cask 无变化，跳过"
+          fi
+      - name: Upload pkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-pkg
+          path: dist/macos/
+
   macos-smoke:
     name: macOS real-machine smoke (hosts switch/rollback)
     runs-on: macos-latest
