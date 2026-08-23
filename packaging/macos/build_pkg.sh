@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-24 01:03 终裁 D1/D2/D3）
 #
 # 终裁口径：
@@ -86,6 +86,9 @@ ln -s "/Applications/$APP_NAME/Contents/MacOS/ghlink" "$STAGE/root/usr/local/bin
 
 echo "==> 配置模板"
 cp "$ROOT/config.example.json" "$STAGE/root/usr/local/etc/ghlink/config.json"
+
+echo "==> 确保 postinstall 可执行（GitHub API 推送默认 644）"
+chmod 0755 "$ROOT/packaging/macos/scripts/postinstall" 2>/dev/null || true
 
 echo "==> pkgbuild（root payload）"
 pkgbuild --root "$STAGE/root" \
