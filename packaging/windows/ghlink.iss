@@ -1,10 +1,10 @@
-; Inno Setup 安装器脚本: ghlink Windows（v0.2.0）
+﻿; Inno Setup 安装器脚本: ghlink Windows（v0.2.0）
 ; 构建: iscc packaging/windows/ghlink.iss
 ; 参考: v0.2 安装包技术方案草案（exe 线：PyInstaller + Inno 安装向导）
 ; 特性: 图形安装向导 + Program Files + PATH + 开始菜单 + 卸载项 + 开机自启选项（默认勾选）
 
 #define MyAppName "ghlink"
-#define MyAppVersion "0.4.12"
+#define MyAppVersion "0.4.13"
 #define MyAppPublisher "Mason Lee"
 #define MyAppExeName "ghlink.exe"
 #define MyAppId "{{B7E3C9A1-2F4D-4A6E-9C81-0D1F2B3C4D5E}"
