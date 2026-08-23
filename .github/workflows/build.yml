@@ -1,4 +1,4 @@
-name: Build ghlink
+﻿name: Build ghlink
 
 on:
   push:
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Build pkg (Cask .app + CLI symlink)
         run: |
           bash packaging/macos/build_pkg.sh
