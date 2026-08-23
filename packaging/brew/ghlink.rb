@@ -1,4 +1,4 @@
-# Homebrew Formula: ghlink
+﻿# Homebrew Formula: ghlink
 # 用法: brew install ghlink（本 formula 由 brew tap liwmj/ghlink 提供）
 # 参考: v0.2 安装包技术方案草案（brew 线：libexec + bin 入口 + launchd 模板）
 #
@@ -18,7 +18,7 @@
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.4.12.tar.gz"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.4.13.tar.gz"
   sha256 "d5aca9113600b404cc6ec6abc1c0877b3609b36a515098f52f246de813fd1ec9"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
