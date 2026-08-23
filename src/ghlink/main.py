@@ -294,16 +294,34 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             verify_targets = [t for t in entries if t in core_targets] or list(entries.keys())
             st["state"] = "verifying"
             if not hosts_manager.verify_after_apply(verify_targets, timeout):
-                # P0-1: 自检失败 → 回滚动态段 + 保留/重建 GitHub520 静态段
+                # P0-1: 自检失败 → 回滚动态段 + 保留/重建静态兜底段
                 # （李工 22:12 语义：回滚不清空 ghlink hosts，静态兜底 IP 保留；
                 #  卸载才彻底清理——回滚≠卸载）
                 hosts_manager.rollback(backup_path)
-                if github520_entries:
-                    # 重建静态兜底段（非核心域名），核心域名回退系统 DNS
-                    static_block = hosts_manager.build_combined_block({}, github520_entries)
-                    hosts_manager.apply_block(
-                        static_block, _backup_dir(cfg, config_path), preserve_g520=True
-                    )
+                # v0.4.11（李工 22:53）：核心域名（动态段）也保留静态保底——
+                # 用 last_dynamic_ips 缓存（24h 新鲜窗口）写核心域名段，
+                # 非核心域名走 GitHub520 子段；坏 IP 已清、最近好 IP 保底，
+                # 缓存超 24h 才回退系统 DNS（防陈旧 IP）
+                dynamic_fallback: Dict[str, list] = {}
+                _cached = st.get("last_dynamic_ips") or {}
+                _cached_at = st.get("last_dynamic_at") or ""
+                _fresh = False
+                if _cached and _cached_at:
+                    try:
+                        import time as _t
+
+                        _ct = _t.mktime(_t.strptime(_cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
+                        _fresh = 0 <= _t.time() - _ct <= 86400  # 24h 内
+                    except Exception:
+                        _fresh = False
+                if _fresh:
+                    dynamic_fallback = {k: v for k, v in _cached.items() if k in core_targets and v}
+                static_block = hosts_manager.build_combined_block(
+                    dynamic_fallback, github520_entries
+                )
+                hosts_manager.apply_block(
+                    static_block, _backup_dir(cfg, config_path), preserve_g520=True
+                )
                 st["state"] = "degraded"
                 st["last_error"] = "verify failed after apply, rolled back"
                 if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
