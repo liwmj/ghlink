@@ -9,16 +9,23 @@
 # v0.4.7（赛博 2026-08-23，李工反馈 brew 停在 0.2.18）：
 # P3: 版本同步发版 —— url/sha256 必须随每次发版 bump（build.yml 已加 tap 自动同步校验）
 # P4: 卸载清理 —— Homebrew Formula 不支持 def uninstall 钩子（那是 Cask 机制），
-#     卸载后 etc/ghlink 残留由 ghlink uninstall 命令清理（见 caveats 第 5 条）；
-#     彻底自动清理走 v0.4.8 Cask 方案（uninstall/zap 钩子，李工 17:30 拍板 C 方案）
+#     卸载后 etc/ghlink 残留由 ghlink uninstall 命令清理（见 caveats 第 5 条）
+#
+# v0.4.12（李工 2026-08-24 01:03 终裁 D1）：
+# P5: formula 退役 —— cask 单轨（brew install --cask ghlink），本 formula deprecate 保留追溯。
+#     卸载自动清理走 Cask 的 uninstall/zap 钩子（见 packaging/macos/Casks/ghlink.rb）
 
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.4.9.tar.gz"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.4.12.tar.gz"
   sha256 "d5aca9113600b404cc6ec6abc1c0877b3609b36a515098f52f246de813fd1ec9"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
+
+  # v0.4.12（李工 01:03 终裁 D1）：cask 单轨，formula 退役。
+  # 请使用 brew install --cask ghlink（含 .app + 卸载自动清理）。
+  deprecate! date: "2026-08-24", because: "cask 单轨（v0.4.12 起），请使用 brew install --cask ghlink"
 
   depends_on "python@3.12"
 
