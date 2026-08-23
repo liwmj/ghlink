@@ -166,7 +166,7 @@ jobs:
           set -e
           TAP_REPO="liwmj/homebrew-tap"
           TAG="${GITHUB_REF#refs/tags/}"
-          git clone "https://x-access-token:***}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
+          git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
           # 替换 Cask 中的 sha256 占位符为真实 pkg sha256（macOS BSD sed 需 -i ''）
           sed -i '' "s/REPLACE_WITH_PKG_SHA256/${PKG_SHA256}/" packaging/macos/Casks/ghlink.rb
