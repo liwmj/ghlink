@@ -14,6 +14,9 @@ cask "ghlink" do
   # - D3：uninstall 钩子调 ghlink uninstall（停任务 + 还原 hosts + 删配置，彻底清理）
   pkg "ghlink-#{version}.pkg"
 
+  # Bug 2 修复（v0.4.12）：vendor 以 python@3.14 编译，运行时锁定同版本（二进制扩展 ABI 兼容）
+  depends_on formula: "python@3.14"
+
   # D3（李工终裁）：卸载时调 ghlink uninstall 彻底清理——停任务 + 还原 hosts + 删配置，
   # 比仅删文件更彻底（含 /etc/hosts 的 ghlink 段落还原、LaunchDaemon 移除、/var/lib/ghlink 清理）
   uninstall pkgutil: "com.ghlink.pkg",
