@@ -1,10 +1,10 @@
-[build-system]
+﻿[build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghlink"
-version = "0.4.12"
+version = "0.4.13"
 description = "Self-healing connectivity for GitHub: monitors reachability, auto-resolves fresh IPs and updates hosts to restore access seamlessly. Zero third-party dependencies, cross-platform."
 readme = "README.md"
 requires-python = ">=3.8"
