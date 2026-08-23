@@ -10,8 +10,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import ghlink.main as main
 import ghlink.hosts_manager as hosts_manager
+import ghlink.main as main
 
 
 class TestRollbackPreservesStatic:
@@ -61,7 +61,9 @@ class TestRollbackPreservesStatic:
         applied = []
         monkeypatch.setattr(
             "ghlink.hosts_manager.apply_block",
-            lambda block, backup_dir, preserve_g520=True: applied.append(block) or (True, backup_dir),
+            lambda block, backup_dir, preserve_g520=True: (
+                applied.append(block) or (True, backup_dir)
+            ),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.rollback",
@@ -88,7 +90,6 @@ class TestRollbackPreservesStatic:
             "ghlink.platform_adapter.ensure_privilege",
             lambda: True,
         )
-        from ghlink import main as m
 
         # remove_block 幂等返回 True 即为卸载清理路径
         assert hosts_manager.remove_block() is True
