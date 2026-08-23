@@ -80,6 +80,22 @@ def _cooldown_sec(cfg: Dict[str, Any]) -> int:
     return int(cfg.get("trigger", {}).get("cooldown_min", 15)) * 60
 
 
+def _fresh_dynamic_cache(st: Dict[str, Any]) -> Dict[str, list]:
+    """最近成功动态 IP 缓存（v0.4.3）：24h 新鲜窗口内返回缓存，超期返回空（防陈旧 IP）。"""
+    cached = st.get("last_dynamic_ips") or {}
+    cached_at = st.get("last_dynamic_at") or ""
+    if cached and cached_at:
+        try:
+            import time as _t
+
+            ct = _t.mktime(_t.strptime(cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
+            if 0 <= _t.time() - ct <= 86400:  # 24h 内
+                return cached
+        except Exception:
+            pass
+    return {}
+
+
 def _update_state(st: Dict[str, Any], **fields: Any) -> None:
     for k, v in fields.items():
         st[k] = v
@@ -188,18 +204,13 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         if not ok_candidates or not entries:
             # v0.4.3（李工 8 bug 点④ macOS 真机验收）：动态失败时优先用最近成功值缓存
             # 兜底写核心域名段（复用动态历史值，非静态降级；超 24h 不写，避免陈旧 IP）
-            cached = st.get("last_dynamic_ips") or {}
-            cached_at = st.get("last_dynamic_at") or ""
-            cache_fresh = False
-            if cached and cached_at:
-                try:
-                    import time as _t
+            cached = _fresh_dynamic_cache(st)
+            if cached:
+                import time as _t
 
-                    ct = _t.mktime(_t.strptime(cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
-                    cache_fresh = 0 <= _t.time() - ct <= 86400  # 24h 内
-                except Exception:
-                    cache_fresh = False
-            if cache_fresh:
+                ct = _t.mktime(
+                    _t.strptime((st.get("last_dynamic_at") or "")[:19], "%Y-%m-%dT%H:%M:%S")
+                )
                 block = hosts_manager.build_combined_block(cached, github520_entries)
                 ok_apply, backup_path = hosts_manager.apply_block(
                     block, _backup_dir(cfg, config_path)
@@ -294,16 +305,23 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             verify_targets = [t for t in entries if t in core_targets] or list(entries.keys())
             st["state"] = "verifying"
             if not hosts_manager.verify_after_apply(verify_targets, timeout):
-                # P0-1: 自检失败 → 回滚动态段 + 保留/重建 GitHub520 静态段
+                # P0-1: 自检失败 → 回滚动态段 + 保留/重建静态兜底段
                 # （李工 22:12 语义：回滚不清空 ghlink hosts，静态兜底 IP 保留；
                 #  卸载才彻底清理——回滚≠卸载）
                 hosts_manager.rollback(backup_path)
-                if github520_entries:
-                    # 重建静态兜底段（非核心域名），核心域名回退系统 DNS
-                    static_block = hosts_manager.build_combined_block({}, github520_entries)
-                    hosts_manager.apply_block(
-                        static_block, _backup_dir(cfg, config_path), preserve_g520=True
-                    )
+                # v0.4.11（李工 22:53）：核心域名（动态段）也保留静态保底——
+                # 用 last_dynamic_ips 缓存（24h 新鲜窗口）写核心域名段，
+                # 非核心域名走 GitHub520 子段；坏 IP 已清、最近好 IP 保底，
+                # 缓存超 24h 才回退系统 DNS（防陈旧 IP）
+                dynamic_fallback = {
+                    k: v for k, v in _fresh_dynamic_cache(st).items() if k in core_targets and v
+                }
+                static_block = hosts_manager.build_combined_block(
+                    dynamic_fallback, github520_entries
+                )
+                hosts_manager.apply_block(
+                    static_block, _backup_dir(cfg, config_path), preserve_g520=True
+                )
                 st["state"] = "degraded"
                 st["last_error"] = "verify failed after apply, rolled back"
                 if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
