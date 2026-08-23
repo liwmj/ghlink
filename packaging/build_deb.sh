@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.4"
+VERSION="0.4.5"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 
@@ -66,3 +66,4 @@ if ! dpkg-deb --build "$BUILD_DIR" "$OUT_DEB" 2>&1; then
     exit 1
 fi
 echo "✅ 构建完成: $OUT_DEB"
+
