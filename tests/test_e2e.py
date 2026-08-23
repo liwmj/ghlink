@@ -45,7 +45,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir, preserve_g520=True: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -160,7 +161,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir, preserve_g520=True: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         alerts = []
         monkeypatch.setattr(
@@ -181,7 +183,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir, preserve_g520=True: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr("ghlink.notifier.send", lambda message, url: False)  # 告警失败
         code = main.run(cfg_path)
@@ -216,7 +219,8 @@ class TestFullCycle:
         # 补 mock 保证确定性：v0.2.19 正常态也写 hosts，全部打桩。
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir, preserve_g520=True: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -258,7 +262,8 @@ class TestFullCycle:
             lambda domain, cfg: ["1.2.3.4"] if "fastly" not in domain else ["5.6.7.8"],
         )
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir, preserve_g520=True: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         # 关键断言：verify 收到的 targets 只含 core_targets（不含 fastly）
         verify_calls = []
