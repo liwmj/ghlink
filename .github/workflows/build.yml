@@ -1,4 +1,4 @@
-﻿name: Build ghlink
+name: Build ghlink
 
 on:
   push:
