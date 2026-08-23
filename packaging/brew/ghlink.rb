@@ -1,4 +1,4 @@
-﻿# Homebrew Formula: ghlink
+# Homebrew Formula: ghlink
 # 用法: brew install ghlink（本 formula 由 brew tap liwmj/ghlink 提供）
 # 参考: v0.2 安装包技术方案草案（brew 线：libexec + bin 入口 + launchd 模板）
 #
