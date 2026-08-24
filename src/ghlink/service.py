@@ -367,14 +367,17 @@ def uninstall() -> int:
                 "请手动清理以下残留：",
                 file=sys.stderr,
             )
-            print(
-                "  sudo rm -f /etc/sudoers.d/ghlink\n"
-                "  sudo launchctl bootout system /Library/LaunchDaemons/com.ghlink.plist 2>/dev/null; "
-                "sudo rm -f /Library/LaunchDaemons/com.ghlink.plist\n"
-                "  sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts\n"
-                "  sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink ~/.ghlink /var/lib/ghlink",
-                file=sys.stderr,
-            )
+            steps = [
+                "sudo rm -f /etc/sudoers.d/ghlink",
+                "sudo launchctl bootout system /Library/LaunchDaemons/"
+                "com.ghlink.plist 2>/dev/null; sudo rm -f "
+                "/Library/LaunchDaemons/com.ghlink.plist",
+                "sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts",
+                "sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink "
+                "~/.ghlink /var/lib/ghlink",
+            ]
+            for step in steps:
+                print(f"  {step}", file=sys.stderr)
             return 2
         try:
             r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)
