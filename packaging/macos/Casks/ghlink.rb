@@ -1,5 +1,5 @@
 cask "ghlink" do
-  version "0.4.13"
+  version "0.4.14"
   sha256 "REPLACE_WITH_PKG_SHA256"
 
   url "https://github.com/liwmj/ghlink/releases/download/v#{version}/ghlink-#{version}.pkg",
@@ -8,28 +8,33 @@ cask "ghlink" do
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
 
-  # v0.4.12（李工 2026-08-24 01:03 终裁 D1=cask 单轨 / D2=.app 内嵌 CLI+symlink / D3=uninstall 调 ghlink uninstall 彻底）：
-  # - D1：formula 已 deprecate 退役，cask 单轨（brew install --cask ghlink）
-  # - D2：pkg 内含 ghlink.app（双击启动托盘）+ /usr/local/bin/ghlink symlink（对齐 sudoers 放行）
-  # - D3：uninstall 钩子调 ghlink uninstall（停任务 + 还原 hosts + 删配置，彻底清理）
+  # 设计基线（v0.4.12 起）：cask 单轨（formula 已 deprecate 退役，brew install --cask ghlink）；
+  # pkg 内含 ghlink.app（双击启动托盘）+ /usr/local/bin/ghlink symlink（对齐 sudoers 放行）；
+  # uninstall 钩子调 ghlink uninstall（停任务 + 还原 hosts + 删配置，彻底清理）
   pkg "ghlink-#{version}.pkg"
 
-  # Bug 2 修复（v0.4.12）：vendor 以 python@3.14 编译，运行时锁定同版本（二进制扩展 ABI 兼容）
+  # vendor 以 python@3.14 编译，运行时锁定同版本（二进制扩展 ABI 兼容）
   depends_on formula: "python@3.14"
 
-  # D3（李工终裁）：卸载时调 ghlink uninstall 彻底清理——停任务 + 还原 hosts + 删配置，
+  # 卸载时调 ghlink uninstall 彻底清理——停任务 + 还原 hosts + 删配置，
   # 比仅删文件更彻底（含 /etc/hosts 的 ghlink 段落还原、LaunchDaemon 移除、/var/lib/ghlink 清理）
+  # v0.4.14（2026-08-24 Cask 卸载事故修复）：brew 卸载固定 `sudo -E` 执行 uninstall script，
+  # macOS 默认 sudoers 未开 setenv → 必报 "not allowed to preserve the environment"。
+  # 改 sudo: false——brew 不再包 sudo，由 ghlink uninstall 内部普通 sudo 自提权
+  # （有 NOPASSWD 窄放行免密/无则交互输密码），D3 彻底清理语义完整保留。
   uninstall pkgutil: "com.ghlink.pkg",
             script:  {
               executable: "/usr/local/bin/ghlink",
               args:       ["uninstall"],
-              sudo:       true,
+              sudo:       false,
             }
 
   # zap：彻底清理残留（brew uninstall --zap ghlink 时执行，二次兜底）
   zap trash: [
     "/usr/local/etc/ghlink",
+    "/opt/homebrew/etc/ghlink",
     "/var/lib/ghlink",
+    "~/.ghlink",
     "~/Library/LaunchAgents/com.ghlink.tray.plist",
     "~/Library/Application Support/ghlink",
   ]
