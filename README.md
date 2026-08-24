@@ -138,6 +138,18 @@ brew trust --cask liwmj/tap/ghlink && brew install --cask ghlink
 
 > tap 仓库：liwmj/homebrew-tap（2026-08-23 由 homebrew-ghlink 更名，多包通用 tap）
 
+**macOS 卸载（Cask，v0.4.14 起）**
+
+```bash
+brew uninstall --cask ghlink        # 自动执行 ghlink uninstall：停任务 + 还原 hosts + 删配置 + 自清 sudoers 规则
+brew uninstall --cask ghlink --zap  # 二次兜底清理全部残留（彻底卸载推荐）
+```
+
+> v0.4.14 起：brew 不再用 `sudo -E` 包装卸载脚本（macOS 默认 sudoers 未开 setenv，
+> `sudo -E` 必报 "not allowed to preserve the environment"，v0.4.13 及之前会卡死在此），
+> 改由 ghlink uninstall 内部以普通 sudo 自提权执行。若手动配置过 /etc/sudoers.d/ghlink
+> （v0.4.5 李工放行的 NOPASSWD 窄放行），卸载会自动清理该规则。
+
 **Windows（安装向导 / 裸 exe）**
 
 ```bash

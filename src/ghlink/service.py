@@ -348,7 +348,27 @@ def uninstall() -> int:
     """卸载清理（李工 2026-08-22 19:31 终裁：uninstall=彻底删除）。
 
     = disable（停任务）+ remove_block（还原 hosts）+ 删配置目录（当前平台）。
-    返回退出码（0=成功，2=权限/错误）。"""
+    返回退出码（0=成功，2=权限/错误）。
+
+    v0.4.14（Cask 卸载事故修复）：非 root 时自提权重跑——brew cask uninstall
+    不再用 sudo -E 包装（macOS 默认 sudoers 未开 setenv，-E 必被拒），改由本命令
+    内部普通 sudo 提权（有 NOPASSWD 窄放行免密、无则交互输密码）。卸载同时自清
+    ghlink 关联的 sudoers 规则与运行残留（此前需全手动清）。"""
+    # 自提权：非 root 时以 sudo 重跑本命令（root 后走正常流程，无死循环）
+    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() != 0:
+        import subprocess as _sp
+
+        exe = shutil.which("ghlink") or sys.argv[0]
+        try:
+            r = _sp.run(["sudo", exe, "uninstall"], check=False)
+            return r.returncode
+        except Exception as exc:
+            print(
+                f"[ghlink] 卸载需要 root 权限，提权失败（{exc}），"
+                "请手动运行: sudo ghlink uninstall",
+                file=sys.stderr,
+            )
+            return 2
     rc = disable()
     if rc != 0:
         return rc
@@ -366,7 +386,46 @@ def uninstall() -> int:
 
             _sh.rmtree(d, ignore_errors=True)
             print(f"[ghlink] 已删除配置目录: {d}")
+    # v0.4.14：清理 ghlink 关联的系统残留（Cask 卸载事故暴露，此前需全手动）
+    _cleanup_uninstall_residue()
     return 0
+
+
+def _cleanup_uninstall_residue() -> None:
+    """卸载残留清理（v0.4.14，root 上下文执行）。
+
+    - /etc/sudoers.d/ghlink：李工 v0.4.5 决策点 2 放行的 NOPASSWD/!env_reset 规则，
+      卸载必须自清（内容含 ghlink 才删，防误删用户自建规则）
+    - ~/.ghlink：托盘 PID/用户态残留（v0.4.14 事故中 ghlink-tray.pid 残留根因）
+    - /var/lib/ghlink：root 状态目录（/etc/ghlink 场景）
+    - /usr/local/etc/ghlink、/opt/homebrew/etc/ghlink：旧 brew 配置残留
+    """
+    import shutil as _sh
+
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    if os.path.exists(sudoers_d):
+        try:
+            with open(sudoers_d, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            if "ghlink" in content:
+                os.unlink(sudoers_d)
+                print(f"[ghlink] 已清理 sudoers 规则: {sudoers_d}")
+            else:
+                print(
+                    f"[ghlink] 跳过 {sudoers_d}（内容不含 ghlink，疑似非本工具规则）",
+                    file=sys.stderr,
+                )
+        except OSError as exc:
+            print(f"[ghlink] 警告：清理 {sudoers_d} 失败: {exc}", file=sys.stderr)
+    for d in (
+        os.path.expanduser("~/.ghlink"),
+        "/var/lib/ghlink",
+        "/usr/local/etc/ghlink",
+        "/opt/homebrew/etc/ghlink",
+    ):
+        if os.path.isdir(d):
+            _sh.rmtree(d, ignore_errors=True)
+            print(f"[ghlink] 已清理残留目录: {d}")
 
 
 def status() -> int:

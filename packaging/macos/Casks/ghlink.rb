@@ -1,5 +1,5 @@
 cask "ghlink" do
-  version "0.4.13"
+  version "0.4.14"
   sha256 "REPLACE_WITH_PKG_SHA256"
 
   url "https://github.com/liwmj/ghlink/releases/download/v#{version}/ghlink-#{version}.pkg",
@@ -19,17 +19,23 @@ cask "ghlink" do
 
   # D3（李工终裁）：卸载时调 ghlink uninstall 彻底清理——停任务 + 还原 hosts + 删配置，
   # 比仅删文件更彻底（含 /etc/hosts 的 ghlink 段落还原、LaunchDaemon 移除、/var/lib/ghlink 清理）
+  # v0.4.14（2026-08-24 Cask 卸载事故修复）：brew 卸载固定 `sudo -E` 执行 uninstall script，
+  # macOS 默认 sudoers 未开 setenv → 必报 "not allowed to preserve the environment"。
+  # 改 sudo: false——brew 不再包 sudo，由 ghlink uninstall 内部普通 sudo 自提权
+  # （有 NOPASSWD 窄放行免密/无则交互输密码），D3 彻底清理语义完整保留。
   uninstall pkgutil: "com.ghlink.pkg",
             script:  {
               executable: "/usr/local/bin/ghlink",
               args:       ["uninstall"],
-              sudo:       true,
+              sudo:       false,
             }
 
   # zap：彻底清理残留（brew uninstall --zap ghlink 时执行，二次兜底）
   zap trash: [
     "/usr/local/etc/ghlink",
+    "/opt/homebrew/etc/ghlink",
     "/var/lib/ghlink",
+    "~/.ghlink",
     "~/Library/LaunchAgents/com.ghlink.tray.plist",
     "~/Library/Application Support/ghlink",
   ]
