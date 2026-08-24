@@ -375,7 +375,7 @@ def _uninstall_self_elevate() -> Optional[int]:
             print(f"  {step}", file=sys.stderr)
         return 2
     try:
-        r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)  # NOSONAR: exe 为工具自身路径，非外部输入
+        r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)  # NOSONAR
         return r.returncode
     except Exception as exc:
         print(
