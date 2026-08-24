@@ -374,7 +374,7 @@ def _uninstall_self_elevate() -> Optional[int]:
         exe = None
     # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
     # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
-    if not os.path.exists(exe):
+    if not exe or not os.path.exists(exe):
         print(
             "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。请手动清理以下残留：",
             file=sys.stderr,
