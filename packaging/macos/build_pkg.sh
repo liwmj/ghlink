@@ -1,7 +1,7 @@
 #!/bin/bash
-# ghlink macOS pkg 构建（v0.4.12 Cask 方案，李工 2026-08-24 01:03 终裁 D1/D2/D3）
+# ghlink macOS pkg 构建（v0.4.12 Cask 方案）
 #
-# 终裁口径：
+# 设计口径：
 #   D1 = cask 单轨（formula deprecate 退役）
 #   D2 = .app 内嵌 CLI + /usr/local/bin/ghlink symlink（对齐 sudoers 放行，防提权断链）
 #   D3 = uninstall 钩子调 ghlink uninstall（停任务+还原 hosts+删配置，彻底）
