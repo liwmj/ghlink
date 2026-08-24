@@ -359,8 +359,25 @@ def uninstall() -> int:
         import subprocess as _sp
 
         exe = shutil.which("ghlink") or sys.argv[0]
+        # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
+        # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
+        if not os.path.exists(exe):
+            print(
+                "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。"
+                "请手动清理以下残留：",
+                file=sys.stderr,
+            )
+            print(
+                "  sudo rm -f /etc/sudoers.d/ghlink\n"
+                "  sudo launchctl bootout system /Library/LaunchDaemons/com.ghlink.plist 2>/dev/null; "
+                "sudo rm -f /Library/LaunchDaemons/com.ghlink.plist\n"
+                "  sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts\n"
+                "  sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink ~/.ghlink /var/lib/ghlink",
+                file=sys.stderr,
+            )
+            return 2
         try:
-            r = _sp.run(["sudo", exe, "uninstall"], check=False)
+            r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)
             return r.returncode
         except Exception as exc:
             print(
