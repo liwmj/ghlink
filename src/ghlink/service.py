@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import time
+from typing import Optional
 
 from . import hosts_manager, platform_adapter, state
 from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
@@ -344,6 +345,49 @@ def disable() -> int:
         return 2
 
 
+# v0.4.14：二进制缺失时手动清理指引（_uninstall_self_elevate 使用）
+_MANUAL_CLEANUP_STEPS = (
+    "sudo rm -f /etc/sudoers.d/ghlink",
+    "sudo launchctl bootout system /Library/LaunchDaemons/com.ghlink.plist "
+    "2>/dev/null; sudo rm -f /Library/LaunchDaemons/com.ghlink.plist",
+    "sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts",
+    "sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink "
+    "~/.ghlink /var/lib/ghlink",
+)
+
+
+def _uninstall_self_elevate() -> Optional[int]:
+    """非 root 时以 sudo 重跑本命令（root 后正常执行，无死循环）。
+
+    返回退出码；已是 root（无需提权）返回 None。"""
+    if os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() == 0:
+        return None
+    import subprocess as _sp
+
+    exe = shutil.which("ghlink") or sys.argv[0]
+    # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
+    # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
+    if not os.path.exists(exe):
+        print(
+            "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。"
+            "请手动清理以下残留：",
+            file=sys.stderr,
+        )
+        for step in _MANUAL_CLEANUP_STEPS:
+            print(f"  {step}", file=sys.stderr)
+        return 2
+    try:
+        r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)
+        return r.returncode
+    except Exception as exc:
+        print(
+            f"[ghlink] 卸载需要 root 权限，提权失败（{exc}），"
+            "请手动运行: sudo ghlink uninstall",
+            file=sys.stderr,
+        )
+        return 2
+
+
 def uninstall() -> int:
     """卸载清理（李工 2026-08-22 19:31 终裁：uninstall=彻底删除）。
 
@@ -355,40 +399,9 @@ def uninstall() -> int:
     内部普通 sudo 提权（有 NOPASSWD 窄放行免密、无则交互输密码）。卸载同时自清
     ghlink 关联的 sudoers 规则与运行残留（此前需全手动清）。"""
     # 自提权：非 root 时以 sudo 重跑本命令（root 后走正常流程，无死循环）
-    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() != 0:
-        import subprocess as _sp
-
-        exe = shutil.which("ghlink") or sys.argv[0]
-        # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
-        # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
-        if not os.path.exists(exe):
-            print(
-                "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。"
-                "请手动清理以下残留：",
-                file=sys.stderr,
-            )
-            steps = [
-                "sudo rm -f /etc/sudoers.d/ghlink",
-                "sudo launchctl bootout system /Library/LaunchDaemons/"
-                "com.ghlink.plist 2>/dev/null; sudo rm -f "
-                "/Library/LaunchDaemons/com.ghlink.plist",
-                "sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts",
-                "sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink "
-                "~/.ghlink /var/lib/ghlink",
-            ]
-            for step in steps:
-                print(f"  {step}", file=sys.stderr)
-            return 2
-        try:
-            r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)
-            return r.returncode
-        except Exception as exc:
-            print(
-                f"[ghlink] 卸载需要 root 权限，提权失败（{exc}），"
-                "请手动运行: sudo ghlink uninstall",
-                file=sys.stderr,
-            )
-            return 2
+    elevated = _uninstall_self_elevate()
+    if elevated is not None:
+        return elevated
     rc = disable()
     if rc != 0:
         return rc
