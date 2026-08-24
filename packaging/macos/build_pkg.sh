@@ -17,7 +17,11 @@
 
 set -e
 
-VERSION="0.4.13"
+# v0.4.15（验收发现 pkg 内版本标注硬编码）：版本号动态化——CI 取 GITHUB_REF_NAME（tag），
+# 本地取最近 git tag，可被 VERSION 环境变量覆盖
+VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
+echo "==> 构建版本: $VERSION"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STAGE="$ROOT/build/macos-pkg"
 PKG_OUT="$ROOT/dist/macos"
@@ -36,7 +40,37 @@ cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
 
 # vendor 依赖（托盘 pystray + Pillow）注入 .app，核心零依赖
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install --target "$APP/Contents/libexec/vendor" --quiet pystray Pillow
+# v0.4.15（李工 02:50 拍板双架构）：Pillow cp314 无 universal2 wheel → 分架构拉取 + lipo 合并 fat binary；
+# pystray + PyObjC 框架为 universal2/纯 Python wheel（双架构通用，无需合并）
+VENDOR="$APP/Contents/libexec/vendor"
+WHEEL_DIR="$STAGE/wheels"
+rm -rf "$WHEEL_DIR"
+# 1) 通用依赖（pystray + PyObjC：universal2/纯 wheel，双架构通用）
+mkdir -p "$WHEEL_DIR/universal"
+"$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
+  -d "$WHEEL_DIR/universal" pystray six pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz --quiet || exit 1
+for W in "$WHEEL_DIR/universal"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/universal/unpacked"; done
+cp -R "$WHEEL_DIR/universal/unpacked/." "$VENDOR/"
+# 2) Pillow 分架构拉取 → lipo 合并 C 扩展成 fat binary（单 pkg 通吃 Intel/Apple Silicon）
+for ARCH in x86_64 arm64; do
+  mkdir -p "$WHEEL_DIR/$ARCH"
+  PLATFORM="macosx_10_13_${ARCH}"
+  [ "$ARCH" = "arm64" ] && PLATFORM="macosx_11_0_${ARCH}"
+  "$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
+    --platform "$PLATFORM" --python-version 3.14 --abi cp314 \
+    -d "$WHEEL_DIR/$ARCH" Pillow --quiet || exit 1
+  for W in "$WHEEL_DIR/$ARCH"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/$ARCH/unpacked"; done
+done
+cp -R "$WHEEL_DIR/x86_64/unpacked/." "$VENDOR/"
+find "$VENDOR" -name "*.so" -type f | while read -r SO; do
+  REL="${SO#"$VENDOR"/}"
+  ARM_SO="$WHEEL_DIR/arm64/unpacked/$REL"
+  if [ -f "$ARM_SO" ]; then
+    lipo -create "$SO" "$ARM_SO" -output "$SO.tmp" && mv "$SO.tmp" "$SO"
+    echo "    lipo merged: $REL"
+  fi
+done
+rm -rf "$WHEEL_DIR"
 
 # CLI 可执行（内嵌 .app，sudoers 放行此路径）
 # 相对化：APP_DIR 动态推导（不写死构建机路径，v0.4.12 Bug 1 修复）
@@ -90,13 +124,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>ghlink</string>
   <key>CFBundleDisplayName</key><string>ghlink</string>
   <key>CFBundleIdentifier</key><string>com.ghlink.tray</string>
-  <key>CFBundleVersion</key><string>0.4.12</string>
-  <key>CFBundleShortVersionString</key><string>0.4.12</string>
+  <key>CFBundleVersion</key><string>__VERSION__</string>
+  <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>CFBundleExecutable</key><string>ghlink-tray</string>
   <key>CFBundleIconFile</key><string>ghlink-icon</string>
   <key>LSMinimumSystemVersion</key><string>10.15</string>
 </dict></plist>
 PLIST
+
+# v0.4.15：plist 版本号随构建版本（动态化，防内版标注滞留在旧 tag）
+sed -i '' "s/__VERSION__/$VERSION/g" "$APP/Contents/Info.plist"
 
 # 图标：png → icns（sips + iconutil）
 ICON_PNG="$ROOT/assets/ghlink-icon.png"
