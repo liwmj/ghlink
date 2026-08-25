@@ -223,7 +223,7 @@ jobs:
 
   release:
     name: Attach to GitHub Release
-    needs: [build-sdist, build-windows, build-linux]
+    needs: [build-sdist, build-windows, build-linux, build-macos-pkg]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 创建/更新 Release + 附件需要写权限
@@ -238,6 +238,7 @@ jobs:
             artifacts/**/*.whl
             artifacts/**/*.tar.gz
             artifacts/**/*.exe
+            artifacts/**/*.pkg
             artifacts/**/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
