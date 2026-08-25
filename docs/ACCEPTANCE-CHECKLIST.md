@@ -45,7 +45,18 @@
 | G4 | 重启自启 | 开启「开机自启动」→ 重启后托盘自动拉起 + 值守自动启用 | ⏳ v0.4.23 验证 |
 | G5 | GUI 环境 PATH | LaunchServices 环境（PATH=/usr/bin:/bin:/usr/sbin:/sbin）下 _cli_command 命中 /usr/local/bin/ghlink（不退回 python -m） | ⏳ v0.4.23 验证 |
 
-## 四、平台矩阵（三平台 × 场景）
+## 四、Windows 链路（Cask 同套，赛博 2026-08-26 建议纳入，赛博可跑）
+
+> 与 macOS 同套用例：安装 → 值守 → 卸载复验，防僵尸 bug（0.4.18 僵尸 = 重试上限/心跳/路径三修复缺失叠加，0.4.22 已收口）。
+
+| # | 用例 | 断言 | 结果 |
+|---|------|------|------|
+| W1 | 安装 | installer SHA256 匹配发布摘要，静默安装成功，版本 0.4.22+ | ⏳ 待跑 |
+| W2 | 值守 | 任务自动注册（SYSTEM + IgnoreNew），watch 单次正常退出，无进程堆积 | ⏳ 待跑 |
+| W3 | 状态 | state=normal 心跳新鲜，无僵尸（疑似不复发） | ⏳ 待跑 |
+| W4 | 卸载复验 | 卸载后任务/进程/配置清理，无残留 | ⏳ 待跑 |
+
+## 五、平台矩阵（三平台 × 场景）
 
 > 详细断言见 docs/PLATFORM-RESULTS.md（Linux Ubuntu / Windows Server 2022 / macOS CI runner 真机实测，E-001~E-006 + 权限 + DNS 刷新）。
 
