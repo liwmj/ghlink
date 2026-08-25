@@ -216,14 +216,24 @@ def _refresh(icon: Any) -> None:
     """定时刷新：状态文件 → 图标颜色 + 菜单文字。
 
     状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+
+    v0.4.17（李工 Windows 反馈「菜单热点丢失」）：原实现每 5 秒全量重建菜单
+    （icon.menu = _build_menu() + update_menu()），鼠标悬停时菜单被重建 →
+    热点消失，看似崩溃。改为：仅在状态（颜色/值守/自启/文案）变化时才重建。
     """
-    color = _state_color()
     try:
+        color = _state_color()
+        watching = service._is_enabled()
+        autostart = service._is_autostart()
+        status = _status_text()
+        key = (color, watching, autostart, status)
+        if getattr(icon, "_ghlink_menu_key", None) == key:
+            return  # 状态无变化：不重建菜单，保住热点
         icon.icon = _make_icon(color)
-        icon.title = _status_text()
-        # 重建菜单（值守开关状态同步）
+        icon.title = status
         icon.menu = _build_menu()
         icon.update_menu()
+        icon._ghlink_menu_key = key
     except Exception:
         pass
 
@@ -272,7 +282,12 @@ def _run_privileged(subcmd: str) -> bool:
         if sys.platform == "win32" and not platform_adapter._is_admin():
             import ctypes
 
-            params = " ".join(f'"{a}"' for a in cmd)
+            # v0.4.17（李工 Windows 反馈「无法开启值守」）：ShellExecuteW 的
+            # lpParameters 只能传参数，不能包含 exe 本身——原实现把整个 cmd
+            # （含 ghlink.exe 路径）拼进 params，提权进程 argv 变成
+            # [ghlink.exe, <exe路径>, "enable"] → main.py 把 exe 路径当 config
+            # 解析 → enable 根本没执行。只传 cmd[1:]（子命令部分）。
+            params = " ".join(f'"{a}"' for a in cmd[1:])
             ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", cmd[0], params, None, 1)
             return ret > 32
         import os as _os
