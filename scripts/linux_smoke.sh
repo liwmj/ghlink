@@ -95,6 +95,8 @@ echo "===== Linux 真机冒烟开始 $(date '+%H:%M:%S') ====="
 # v0.4.18（宽容改造，拂晓真机验收暴露）：本机 GitHub 链路劣化（靶场）时，
 # 正常轮探测失败 → 自愈写 hosts → verify 失败回滚，是正确降级行为（degraded），
 # 与 ② 同口径宽容处理，不算 FAIL（健康基线不满足是环境性，非包缺陷）
+# v0.4.18（二次修复，拂晓复跑暴露）：rc=0 正常态写段也是正确行为——
+# v0.2.19 ③ 明确「正常态也写 hosts 段（全局访问生效）」，干净基线首轮必然写入 → 宽容
 strip_ghlink; flush
 before=$(sha256sum "$HOSTS" | cut -d' ' -f1)
 $RUN >/dev/null 2>&1; rc=$?
@@ -105,6 +107,8 @@ if [ "$rc" -eq 0 ] && [ "$before" = "$after" ]; then
 elif [ "$rc" -eq 1 ] && [ "$s1" = "degraded" ]; then
   e=$(err "$TMP/state.json")
   ok "① 降级宽容（本机链路劣化，degraded: $e；正确行为）"
+elif [ "$rc" -eq 0 ] && grep -q "ghlink Start" "$HOSTS"; then
+  ok "① 正常态写段宽容（v0.2.19 ③：正常态也写 hosts 段，干净基线首轮必然写入；正确行为）"
 else
   [ "$rc" -eq 0 ] && ok "① 正常路径 EXIT 0" || bad "① 正常路径 EXIT=$rc"
   [ "$before" = "$after" ] && ok "① hosts 零改动" || bad "① hosts 被改动"
@@ -188,8 +192,8 @@ inject 127.0.0.1
 for i in 1 2 3; do
   $RUN_COOL >/dev/null 2>&1
 done
-h2=$(python3 -c "import json;print(len(json.load(open('$TMP/cool-state.json')).get('history',[])))" 2>/dev/null)
-[ "$h2" -le 1 ] && ok "⑤ 冷却期不重复切换 (history=$h2)" || bad "⑤ 冷却期内重复切换 (history=$h2)"
+h2=$(python3 -c "import json;h=json.load(open('$TMP/cool-state.json')).get('history',[]);print(len([x for x in h if 'consecutive' in str(x.get('trigger',''))]))" 2>/dev/null)
+[ "$h2" -le 1 ] && ok "⑤ 冷却期不重复切换 (switch=$h2)" || bad "⑤ 冷却期内重复切换 (switch=$h2)"
 
 # 收尾：恢复基线并核对
 restore_hosts
