@@ -129,13 +129,20 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key><string>__VERSION__</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>CFBundleExecutable</key><string>ghlink-tray</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>ghlink-icon</string>
   <key>LSMinimumSystemVersion</key><string>10.15</string>
+  <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
 
 # v0.4.15：plist 版本号随构建版本（动态化，防内版标注滞留在旧 tag）
 sed -i '' "s/__VERSION__/$VERSION/g" "$APP/Contents/Info.plist"
+
+# v0.4.22（李工 22:53 实测：LaunchServices 不识别菜单栏应用，Dock 不隐藏/启动异常）：
+# PkgInfo 文件（APPL 魔数，LaunchServices 识别应用类型必需）
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+chmod 0644 "$APP/Contents/PkgInfo"
 
 # 图标：png → icns（sips + iconutil）
 ICON_PNG="$ROOT/assets/ghlink-icon.png"
