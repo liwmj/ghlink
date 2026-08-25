@@ -33,7 +33,19 @@
 | B4 | brew 卸载 | `brew uninstall --cask ghlink`：值守停止（LaunchDaemon 移除）；hosts 还原（ghlink 段落清零）；sudoers.d 清理；/etc/ghlink 配置删除；pkgutil receipt 注销 | ✅ 2026-08-26 |
 | B5 | 零残留复验 | 卸载后 9 项全查：symlink / app / pkgutil / sudoers / LaunchDaemon / 配置目录 / hosts 段落 / brew 记录 / 进程 全零残留 | ✅ 2026-08-26 |
 
-## 三、平台矩阵（三平台 × 场景）
+## 三、真机 GUI 操作（macOS 发版门禁，2026-08-26 赛博定）
+
+> 背景：v0.4.22 李工反馈「一点值守就闪退、经常运行不起来」，根因：GUI 应用 PATH 不含 /usr/local/bin（子进程提权失效）+ 单实例锁残留。修复 v0.4.23 后固化以下用例，每次 macOS 发版必跑。
+
+| # | 用例 | 断言 | 结果 |
+|---|------|------|------|
+| G1 | 双击打开 | `open /Applications/ghlink.app` 后托盘进程存活（pgrep ghlink.main tray 非空），5 秒不闪退 | ⏳ v0.4.23 验证 |
+| G2 | 点菜单项 | 托盘菜单可展开，IP 复制/状态文案正常 | ⏳ v0.4.23 验证 |
+| G3 | 点值守 | 菜单「启用值守」：sudo -n 免密直出（NOPASSWD 匹配 /usr/local/bin/ghlink），值守启用、角标变绿 | ⏳ v0.4.23 验证 |
+| G4 | 重启自启 | 开启「开机自启动」→ 重启后托盘自动拉起 + 值守自动启用 | ⏳ v0.4.23 验证 |
+| G5 | GUI 环境 PATH | LaunchServices 环境（PATH=/usr/bin:/bin:/usr/sbin:/sbin）下 _cli_command 命中 /usr/local/bin/ghlink（不退回 python -m） | ⏳ v0.4.23 验证 |
+
+## 四、平台矩阵（三平台 × 场景）
 
 > 详细断言见 docs/PLATFORM-RESULTS.md（Linux Ubuntu / Windows Server 2022 / macOS CI runner 真机实测，E-001~E-006 + 权限 + DNS 刷新）。
 
