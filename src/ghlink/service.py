@@ -922,7 +922,6 @@ def _disable_linux() -> int:
     return 0
 
 
-
 def _ensure_sudoers_macos() -> None:
     """v0.4.19（李工：装了就能用，拒绝手动配置）：enable 以 root 运行时自动写回 sudoers。
 
@@ -940,6 +939,7 @@ def _ensure_sudoers_macos() -> None:
                     return  # 已有规则，幂等跳过
         # sudo 下 getuser()=root，需从 SUDO_USER 取原用户
         import getpass
+
         user = os.environ.get("SUDO_USER") or getpass.getuser()
         content = (
             "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
