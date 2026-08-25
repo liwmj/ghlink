@@ -285,7 +285,7 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             )
             if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
                 notifier.send(
-                    f"[ghlink] 切换冷却中（距上次切换不足 {cooldown_sec // 60} 分钟），本轮跳过切换",
+                    f"[ghlink] 切换冷却中（距上次切换 < {cooldown_sec // 60}min），本轮跳过",
                     webhook,
                 )
                 notifier.mark_alerted(st)
