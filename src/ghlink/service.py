@@ -945,7 +945,8 @@ def _ensure_sudoers_macos() -> None:
             "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
             f"{user} ALL=(root) NOPASSWD: /usr/local/bin/ghlink\n"
             'Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"\n'
-            'Defaults!/usr/local/bin/ghlink env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
+            "Defaults!/usr/local/bin/ghlink env_keep += "
+            '"HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
         )
         tmp = sudoers_d + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
