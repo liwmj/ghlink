@@ -161,7 +161,9 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
     webhook = cfg.get("notify", {}).get("feishu_webhook", "")
     notify_enabled = bool(cfg.get("notify", {}).get("enabled", True))
 
-    with lock.acquire(_lock_path(cfg, config_path)) as got:
+    with lock.acquire(
+        _lock_path(cfg, config_path), extra_roots=(_config_base(config_path),)
+    ) as got:
         if not got:
             # 已有实例在跑，本轮跳过（不阻塞不排队）
             return 0

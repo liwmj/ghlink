@@ -26,11 +26,13 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def _safe_lock_path(lock_path: str) -> str:
+def _safe_lock_path(lock_path: str, extra_roots: tuple = ()) -> str:
     """校验并规范化锁文件路径（SonarCloud S8707：防符号链接/路径逃逸）。
 
     要求：绝对路径 + realpath 解析符号链接 + 路径必须位于允许目录
     （/var/lib/ghlink、系统临时目录、/tmp、/var/tmp 或用户主目录）内。
+    extra_roots：调用方额外允许的根（v0.4.21：config 所在目录——
+    SYSTEM 跑用户 config 时锁路径落在 ~/.ghlink，白名单必须放行该目录）。
     """
     import tempfile
 
@@ -45,7 +47,7 @@ def _safe_lock_path(lock_path: str) -> str:
         os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), "ghlink"),
         tempfile.gettempdir(),
         os.path.expanduser("~"),
-    )
+    ) + tuple(extra_roots)
     for root in allowed_roots:
         root = os.path.realpath(root)
         if resolved == root or resolved.startswith(root + os.sep):
@@ -54,10 +56,14 @@ def _safe_lock_path(lock_path: str) -> str:
 
 
 @contextmanager
-def acquire(lock_path: str, stale_after_sec: int = 600) -> Iterator[bool]:
-    """获取锁；成功 yield True，已被持有 yield False（调用方直接退出本轮）。"""
+def acquire(lock_path: str, stale_after_sec: int = 600, extra_roots: tuple = ()) -> Iterator[bool]:
+    """获取锁；成功 yield True，已被持有 yield False（调用方直接退出本轮）。
+
+    extra_roots（v0.4.21）：额外允许的锁根目录——main.run 传入 config 目录，
+    修 SYSTEM 上下文跑用户 config 时锁路径被白名单拒绝（ValueError 崩溃）。
+    """
     # SonarCloud S8707：入口统一校验+规范化路径，后续访问全部使用校验后路径
-    lock_path = _safe_lock_path(lock_path)
+    lock_path = _safe_lock_path(lock_path, extra_roots)
     # Linux/macOS 用 flock 内核锁（进程退出自动释放）
     if sys.platform != "win32":
         try:
