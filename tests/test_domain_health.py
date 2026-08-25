@@ -167,7 +167,10 @@ class TestDomainHealth:
         但 github520 静态段保留兜底（本测试 mock github520 为空，聚焦动态段语义；
         静态段兜底由 test_h006 覆盖）。
         """
-        cfg_path = make_config(tmp_path)
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         # 核心域名失败触发切换，codeload 已降级
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
