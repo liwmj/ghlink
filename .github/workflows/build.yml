@@ -187,8 +187,9 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          # 替换 Cask 中的 sha256 占位符为真实 pkg sha256（macOS BSD sed 需 -i ''）
+          # 替换 Cask 中的 sha256 占位符为真实 pkg sha256 + version 随 tag 动态化（macOS BSD sed 需 -i ''）
           sed -i '' "s/REPLACE_WITH_PKG_SHA256/${PKG_SHA256}/" packaging/macos/Casks/ghlink.rb
+          sed -i '' "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
           git config user.name "ghlink-bot"
