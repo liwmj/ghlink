@@ -357,13 +357,17 @@ def _toggle_autostart(icon: Any, item: Any) -> None:
                         if service._is_enabled():
                             break
                         time.sleep(0.5)
-                    msg = (
-                        "开机自启动已开启，值守已启用"
-                        if service._is_enabled()
-                        else "开机自启动已开启（值守启用中）"
-                    )
+                    if service._is_enabled():
+                        msg = "开机自启动已开启，值守已启用"
+                    else:
+                        # v0.4.19（李工 21:52 拍板）：值守没真正起来 → 回滚自启动，
+                        # 不留「自启动开、值守没开」的半开假状态
+                        service._disable_autostart()
+                        msg = "开机自启动开启失败：值守无法启用（权限不足？）"
                 else:
-                    msg = "开机自启动已开启（值守启用失败，可点菜单启用）"
+                    # v0.4.19（李工 21:52 拍板）：enable 提权失败 → 整体回滚
+                    service._disable_autostart()
+                    msg = "开机自启动开启失败：值守无法启用（权限不足？）"
             else:
                 msg = "开启失败"
         _notify(icon, msg)
@@ -505,7 +509,9 @@ def _build_menu():
     # v0.4.6（李工 13:56 拍板）：自启动=值守总开关——
     # 自启动开启时值守锁定为启用态，「关闭值守」置灰（不可点），
     # 「启用值守」勾选显示开启；自启动关闭时菜单自由操作。
-    locked_on = autostart
+    # v0.4.19（李工 21:52 拍板）：locked_on 需值守真实在跑——自启动开但
+    # 值守没起来（enable 失败回滚场景）时菜单显示真实状态、可手动重试，不假绿
+    locked_on = autostart and watching
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
