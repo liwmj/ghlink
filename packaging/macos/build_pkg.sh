@@ -62,7 +62,9 @@ for ARCH in x86_64 arm64; do
   for W in "$WHEEL_DIR/$ARCH"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/$ARCH/unpacked"; done
 done
 cp -R "$WHEEL_DIR/x86_64/unpacked/." "$VENDOR/"
-find "$VENDOR" -name "*.so" -type f | while read -r SO; do
+# v0.4.16（ARM 真机暴露）：lipo 必须覆盖 .dylib——Pillow 的 @loader_path/.dylibs/*.dylib
+# 动态库只合了 x86_64，arm64 机器 dyld 加载 _imaging.so 时找不到 arm64 dylib → ImportError
+find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO; do
   REL="${SO#"$VENDOR"/}"
   ARM_SO="$WHEEL_DIR/arm64/unpacked/$REL"
   if [ -f "$ARM_SO" ]; then
