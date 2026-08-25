@@ -16,14 +16,34 @@ from typing import Iterator
 
 
 def _pid_alive(pid: int) -> bool:
-    """判断 PID 是否存活（跨平台）。"""
+    """判断 PID 是否存活（跨平台）。
+
+    v0.4.23（赛博根因 2026-08-26）：macOS crash 后残留僵尸进程（stat=Z）
+    kill(pid,0) 仍成功 → 单实例锁误判已有托盘 → 后续启动被拒
+    （李工反馈：经常运行不起来，唯一一次是命令行 ghlink tray 恰逢锁被清）。
+    加僵尸态检查：Z 视为已死，stale 锁自动释放。
+    """
     if pid <= 0:
         return False
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+    if sys.platform != "win32":
+        try:
+            import subprocess as _sp
+
+            out = _sp.run(
+                ["ps", "-o", "stat=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            if out.startswith("Z"):  # 僵尸进程 → 视为已死
+                return False
+        except Exception:
+            pass
+    return True
 
 
 def _safe_lock_path(lock_path: str, extra_roots: tuple = ()) -> str:

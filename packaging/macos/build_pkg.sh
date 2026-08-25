@@ -91,6 +91,10 @@ while [ -L "\$SELF" ]; do
 done
 APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
 export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+# v0.4.23（赛博根因 2026-08-26）：GUI 应用（Finder/LaunchServices 双击）PATH 只有
+# /usr/bin:/bin:/usr/sbin:/sbin，不含 /usr/local/bin——子进程调 ghlink/sudo 找不到
+# 二进制（与 08-25 卸载弹密码同病根）。wrapper 显式补全 PATH，托盘内再 export 生效。
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
   [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
 done
@@ -111,6 +115,9 @@ while [ -L "\$SELF" ]; do
 done
 APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
 export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+# v0.4.23（赛博根因 2026-08-26）：GUI 应用 PATH 无 /usr/local/bin——显式补全，
+# 否则托盘内 _cli_command 找不到 ghlink 二进制退回 python -m，sudoers NOPASSWD 不匹配。
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
   [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
 done

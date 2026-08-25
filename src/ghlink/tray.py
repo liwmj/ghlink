@@ -255,9 +255,15 @@ def _cli_command(subcmd: str) -> list:
         # 兜底：frozen 但找不到 ghlink.exe（异常环境），退回当前解释器 + -m
     # v0.4.6（顾笙 13:57 根因）：非 frozen 环境优先找 ghlink 可执行文件，
     # 对齐 sudoers 放行路径（macOS venv: .venv/bin/ghlink；Windows: Scripts/ghlink.exe）
+    # v0.4.23（赛博根因 2026-08-26）：GUI 应用（Finder/LaunchServices 双击）PATH 只有
+    # /usr/bin:/bin:/usr/sbin:/sbin，shutil.which 找不到 /usr/local/bin/ghlink → 退回
+    # python -m 不匹配 sudoers NOPASSWD → 提权失败（与 08-25 卸载弹密码同病根）。
+    # 改为已知安装路径绝对优先（/usr/local/bin + /opt/homebrew/bin），不依赖 PATH。
     import shutil as _shutil
 
     for cand in (
+        "/usr/local/bin/ghlink",  # Intel macOS 安装位（sudoers 放行路径）
+        "/opt/homebrew/bin/ghlink",  # Apple Silicon macOS 安装位
         os.path.join(os.path.dirname(sys.executable), "ghlink"),  # venv/bin/ghlink
         os.path.join(os.path.dirname(sys.executable), "ghlink.exe"),  # Windows Scripts
     ):

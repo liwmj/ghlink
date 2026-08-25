@@ -776,8 +776,17 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                         pid = int(f.read().strip())
                     if pid > 0 and pid != exclude_pid and _pid_alive(pid):
                         return True
+                    # v0.4.23（赛博根因 2026-08-26）：PID 文件残留但进程已死
+                    # （crash 后锁没释放）→ 删残留文件，stale 锁自动释放
+                    try:
+                        os.unlink(pid_file)
+                    except OSError:
+                        pass
             except (OSError, ValueError):
-                pass
+                try:
+                    os.unlink(pid_file)
+                except OSError:
+                    pass
             # 兜底：pgrep（PID 文件缺失/损坏时）
             out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink\\.main tray"])
             pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
