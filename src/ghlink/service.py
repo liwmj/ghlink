@@ -779,7 +779,7 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
             except (OSError, ValueError):
                 pass
             # 兜底：pgrep（PID 文件缺失/损坏时）
-            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
+            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink\\.main tray"])
             pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
             if exclude_pid:
                 pids = [p for p in pids if p != exclude_pid]
