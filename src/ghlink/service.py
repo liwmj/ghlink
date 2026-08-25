@@ -779,7 +779,7 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
             except (OSError, ValueError):
                 pass
             # 兜底：pgrep（PID 文件缺失/损坏时）
-            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
+            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink\\.main tray"])
             pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
             if exclude_pid:
                 pids = [p for p in pids if p != exclude_pid]
@@ -922,7 +922,44 @@ def _disable_linux() -> int:
     return 0
 
 
+def _ensure_sudoers_macos() -> None:
+    """v0.4.19（李工：装了就能用，拒绝手动配置）：enable 以 root 运行时自动写回 sudoers。
+
+    背景：v0.4.5 起 sudoers NOPASSWD 靠人工放行，pkg 重装/卸载自清后丢失，
+    托盘「开启值守」sudo -n 被拒（22:11 实测铁证）。enable 本就是 root 跑，
+    顺手幂等写回：装机即用、重装不丢、无需任何手动命令。
+    """
+    if sys.platform != "darwin":
+        return
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    try:
+        if os.path.exists(sudoers_d):
+            with open(sudoers_d, encoding="utf-8", errors="ignore") as f:
+                if "ghlink" in f.read():
+                    return  # 已有规则，幂等跳过
+        # sudo 下 getuser()=root，需从 SUDO_USER 取原用户
+        import getpass
+
+        user = os.environ.get("SUDO_USER") or getpass.getuser()
+        content = (
+            "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
+            f"{user} ALL=(root) NOPASSWD: /usr/local/bin/ghlink\n"
+            'Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"\n'
+            "Defaults!/usr/local/bin/ghlink env_keep += "
+            '"HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
+        )
+        tmp = sudoers_d + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(tmp, 0o440)
+        os.replace(tmp, sudoers_d)
+        print(f"[ghlink] 已自动写入 sudoers 提权规则: {sudoers_d}")
+    except Exception as exc:
+        print(f"[ghlink] 警告：sudoers 自动写入失败: {exc}", file=sys.stderr)
+
+
 def _enable_macos() -> int:
+    _ensure_sudoers_macos()  # v0.4.19：root 运行自动写回 sudoers，装机即用
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
