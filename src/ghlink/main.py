@@ -272,6 +272,26 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             state.save(st_path, st)
             return 1
 
+        # ⑤ v0.4.18（冷却门控，李工/拂晓验收）：探测失败触发切换前检查冷却期——
+        # 距上次切换 < cooldown_min 时跳过切换（只累计失败计数，防频繁切换抖动）；
+        # config.py 注释「切换冷却 3 小时」设计意图是门控切换，此前只节流了告警（漏实现）
+        cooldown_sec = _cooldown_sec(cfg)
+        last_sw = st.get("last_switched_at", 0) or 0
+        if not ok and last_sw and (time.time() - last_sw) < cooldown_sec:
+            st["state"] = "degraded"
+            st["last_error"] = "in cooldown after last switch, skip switch"
+            st["probe"]["consecutive_failures"] = (
+                st.get("probe", {}).get("consecutive_failures", 0) + 1
+            )
+            if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
+                notifier.send(
+                    f"[ghlink] 切换冷却中（距上次切换不足 {cooldown_sec // 60} 分钟），本轮跳过切换",
+                    webhook,
+                )
+                notifier.mark_alerted(st)
+            state.save(st_path, st)
+            return 1
+
         # 4) 构建复合段落（动态段 + GitHub520 子段）并写入（内容无变化自动跳过）
         block = hosts_manager.build_combined_block(entries, github520_entries)
         st["state"] = "switching"  # 落盘前标记（提权 exit 前已落盘，见下）
