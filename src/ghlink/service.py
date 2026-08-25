@@ -363,10 +363,18 @@ def _uninstall_self_elevate() -> Optional[int]:
         return None
     import subprocess as _sp
 
-    exe = shutil.which("ghlink") or sys.argv[0]
+    # v0.4.15（验收发现）：brew 子进程 PATH 下 which 失败、python -m 使 argv[0]
+    # 变成 main.py 路径——均不匹配 sudoers NOPASSWD → 确定性候选列表找 wrapper
+    exe = shutil.which("ghlink")
+    for _cand in (exe, "/usr/local/bin/ghlink", "/opt/homebrew/bin/ghlink"):
+        if _cand and os.path.exists(_cand):
+            exe = _cand
+            break
+    else:
+        exe = None
     # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
     # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
-    if not os.path.exists(exe):
+    if not exe or not os.path.exists(exe):
         print(
             "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。请手动清理以下残留：",
             file=sys.stderr,
