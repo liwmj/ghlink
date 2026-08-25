@@ -1,10 +1,11 @@
 #!/bin/bash
-# ghlink pkg postinstall（v0.4.12 Cask 方案）
+# ghlink pkg postinstall（v0.4.12 Cask 方案，v0.4.19 加 sudoers 自动写入）
 #
 # 职责：
 #   1. 注册 LaunchDaemon 模板（enable 时由 ghlink 正式注册，这里只保证可执行权限）
 #   2. 确保 CLI wrapper 可执行
-#   3. 刷新 mds（可选，非必须）
+#   3. 自动写入 sudoers 提权规则（v0.4.19 李工：装机即用，拒绝手动配置）
+#   4. 刷新 mds（可选，非必须）
 
 set -e
 
@@ -15,5 +16,22 @@ chmod 0755 /Applications/ghlink.app/Contents/MacOS/ghlink-tray 2>/dev/null || tr
 # 配置目录权限（root 属主，用户可读）
 chown -R root:wheel /usr/local/etc/ghlink 2>/dev/null || true
 chmod 0644 /usr/local/etc/ghlink/config.json 2>/dev/null || true
+
+# v0.4.19（李工 22:16：装了就能用，不手动配）：自动写入 sudoers NOPASSWD 窄放行。
+# 卸载自清（ghlink uninstall 的 _cleanup_uninstall_residue 会删）后重装 pkg 也自动补回。
+# 用户取 console 登录用户（/dev/console），root 安装场景下仍写对归属。
+CONSOLE_USER="$(stat -f '%Su' /dev/console 2>/dev/null || echo '')"
+if [ -n "$CONSOLE_USER" ]; then
+  SUDOERS_D="/etc/sudoers.d/ghlink"
+  if [ ! -f "$SUDOERS_D" ] || ! grep -q "ghlink" "$SUDOERS_D" 2>/dev/null; then
+    cat > "$SUDOERS_D" <<EOS
+# ghlink 托盘提权窄放行（v0.4.19 安装自动写入；卸载自清）
+${CONSOLE_USER} ALL=(root) NOPASSWD: /usr/local/bin/ghlink
+Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"
+Defaults!/usr/local/bin/ghlink env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"
+EOS
+    chmod 0440 "$SUDOERS_D"
+  fi
+fi
 
 exit 0
