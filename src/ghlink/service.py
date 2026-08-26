@@ -607,8 +607,22 @@ def _enable_autostart() -> bool:
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
-            # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
-            exe = shutil.which("ghlink") or sys.executable
+            # v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 环境 PATH 无 /usr/local/bin，
+            # shutil.which("ghlink") 可能找不到 → 回退 sys.executable 裸 python →
+            # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
+            # 改为绝对路径优先：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）→
+            # /usr/local/bin → /opt/homebrew/bin → which → sys.executable 兜底。
+            exe = None
+            for cand in (
+                "/Applications/ghlink.app/Contents/MacOS/ghlink",
+                "/usr/local/bin/ghlink",
+                "/opt/homebrew/bin/ghlink",
+            ):
+                if os.path.exists(cand):
+                    exe = cand
+                    break
+            if not exe:
+                exe = shutil.which("ghlink") or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
                 f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -969,6 +983,12 @@ def _ensure_sudoers_macos() -> None:
 
 def _enable_macos() -> int:
     _ensure_sudoers_macos()  # v0.4.19：root 运行自动写回 sudoers，装机即用
+    # v0.4.25（赛博根因 2026-08-26，顾笙实测）：relocate 事故后 /usr/local/bin/ghlink
+    # 软链断 → _python_cmd() 找不到 wrapper → 回退裸 python -m → ModuleNotFoundError
+    # → daemon 挂（runs=2/last exit=1）。修复：ProgramArguments 用 .app 内绝对路径
+    # wrapper（不依赖软链），并显式注入 PYTHONPATH（.app libexec + vendor）双保险。
+    daemon_cmd = _macos_daemon_command()
+    py_path = _macos_pythonpath()
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -976,9 +996,13 @@ def _enable_macos() -> int:
     <key>Label</key><string>com.ghlink.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{_python_cmd().strip(chr(34))}</string>
+        <string>{daemon_cmd}</string>
         <string>{_config_path()}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key><string>{py_path}</string>
+    </dict>
     <key>StartInterval</key><integer>3600</integer>
     <key>RunAtLoad</key><true/>
     <key>StandardOutPath</key><string>/var/log/ghlink.log</string>
@@ -996,6 +1020,35 @@ def _enable_macos() -> int:
     platform_adapter._run_cmd(["launchctl", "kickstart", "-k", "system/com.ghlink.daemon"])
     print("[ghlink] 已启用值守并立即执行第一轮（LaunchDaemon，1 小时粒度）")
     return 0
+
+
+def _macos_daemon_command() -> str:
+    """macOS LaunchDaemon 执行入口：.app 内绝对路径 wrapper 优先，不依赖 /usr/local/bin 软链。
+
+    v0.4.25（赛博根因 2026-08-26）：relocate 事故 → /usr/local/bin/ghlink 软链断 →
+    _python_cmd() 回退裸 python -m → ModuleNotFoundError。
+    .app 内 wrapper（/Applications/ghlink.app/Contents/MacOS/ghlink）自带 PYTHONPATH 与
+    PATH 补全（v0.4.23），即使软链断了也能跑。
+    """
+    if sys.platform == "darwin":
+        for cand in (
+            "/Applications/ghlink.app/Contents/MacOS/ghlink",
+            "/usr/local/bin/ghlink",
+            "/opt/homebrew/bin/ghlink",
+        ):
+            if os.path.exists(cand):
+                return cand
+    # 非 macOS / 异常环境：走原 _python_cmd()（Windows frozen / dev 回退）
+    return _python_cmd().strip(chr(34))
+
+
+def _macos_pythonpath() -> str:
+    """macOS 注入 PYTHONPATH：.app libexec + vendor（与 wrapper 一致，双保险）。"""
+    if sys.platform == "darwin":
+        app = "/Applications/ghlink.app/Contents/libexec"
+        if os.path.isdir(app):
+            return f"{app}:{app}/vendor"
+    return ""
 
 
 def _disable_macos() -> int:

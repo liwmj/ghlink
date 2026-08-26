@@ -644,25 +644,20 @@ def main() -> int:
     # v0.4.24（李工 03:41 实测定案）：macOS 弃用 pystray——0.19.5（2023-09 停更）
     # 在 macOS 26.6.2 上进程存活但 NSStatusItem 菜单栏图标不渲染；改用 vendored
     # PyObjC 原生渲染（tray_macos.py）。Windows 保持 pystray（正常）。
-    # 注意：darwin 分支在 HAS_TRAY 检查之前分流——原生渲染不依赖 pystray。
+    # v0.4.25（顾笙 11:39 A/B 实锤推翻）：0.4.24 tray_macos.py 有实现 bug——
+    # 菜单栏项创建了但图标坐标 (-1,1087) 屏幕外；0.4.23 pystray 反而正常 (940,3)，
+    # 纯 PyObjC 最小渲染测试也成功 → 是 tray_macos.py 实现问题，非 pystray/环境。
+    # 回退：darwin 也走下方公共 pystray 路径（0.4.23 验证正常），
+    # tray_macos.py 保留文件但本轮不启用，修复单独排期。
+    # darwin 额外：⑤ v0.4.25（李工 11:34 反馈：退出后双击 APP 起不来）——
+    # 托盘自启 = LaunchAgent（用户会话），安装器不注册 → 进程退出后无机制拉起。
+    # 启动时若未注册则自动注册（幂等），保证「双击 APP 启动过 → 下次登录自启」。
     if sys.platform == "darwin":
-        # ③ 单实例锁（Windows 命名互斥体 / macOS pgrep）——darwin 也要防多开
         try:
-            if service._tray_single_instance():
-                print(
-                    "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
-                    file=sys.stderr,
-                )
-                return 0
+            if not service._is_autostart():
+                service._enable_autostart()
         except Exception:
             pass
-        # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
-        _hide_dock_icon()
-        # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
-        service._write_tray_pid()
-        from . import tray_macos
-
-        return tray_macos.main()
 
     if not HAS_TRAY:  # pragma: no cover
         print(

@@ -75,30 +75,63 @@ def test_tray_no_instance_starts(monkeypatch):
     assert tray.main() == 0
 
 
-def test_tray_darwin_native_render(monkeypatch):
-    """v0.4.24（李工 03:41 实测定案）：macOS 弃用 pystray，改走原生渲染。
-
-    pystray 0.19.5 停更，macOS 26.6.2 上进程存活但 NSStatusItem 图标不渲染；
-    darwin 分支应调 tray_macos.main()（vendored PyObjC 原生 NSStatusItem+NSMenu）。
+def test_tray_darwin_pystray_render(monkeypatch):
+    """v0.4.25（顾笙 11:39 A/B 实锤）：0.4.24 tray_macos.py 渲染 bug（图标屏幕外），
+    回退 pystray 公共路径；darwin 启动时自动注册 LaunchAgent（刀①），不阻塞启动。
     """
     monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+    # 自动注册 LaunchAgent：mock 已注册（跳过 launchctl load，防 CI 真实调用）
+    monkeypatch.setattr(tray.service, "_is_autostart", lambda: True)
 
-    from ghlink import tray_macos
+    class _FakeIcon:
+        def __init__(self, *a, **k):
+            pass
 
-    monkeypatch.setattr(tray_macos, "main", lambda: 0)
+        def run(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(tray, "pystray", type("FakePystray", (), {"Icon": _FakeIcon})())
+    monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
+    monkeypatch.setattr(tray, "_status_text", lambda: "")
+    monkeypatch.setattr(tray, "_build_menu", lambda: None)
+    monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)
     assert tray.main() == 0
 
 
-def test_tray_darwin_native_render_no_pyobjc(monkeypatch):
-    """macOS 缺 PyObjC（异常环境/裸 python）：原生渲染返回 2 并提示，不崩溃。"""
+def test_tray_darwin_autoregister_launchagent(monkeypatch):
+    """v0.4.25（李工 11:34 反馈：退出后双击 APP 起不来）：darwin 启动时若未注册
+    LaunchAgent 则自动注册（刀①，幂等），保证「双击 APP 启动过 → 下次登录自启」。"""
+    calls = []
     monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+    monkeypatch.setattr(tray.service, "_is_autostart", lambda: False)
+    monkeypatch.setattr(tray.service, "_enable_autostart", lambda: calls.append(True) or True)
 
-    from ghlink import tray_macos
+    class _FakeIcon:
+        def __init__(self, *a, **k):
+            pass
 
-    monkeypatch.setattr(tray_macos, "HAS_NATIVE", False)
-    assert tray_macos.main() == 2
+        def run(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(tray, "pystray", type("FakePystray", (), {"Icon": _FakeIcon})())
+    monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
+    monkeypatch.setattr(tray, "_status_text", lambda: "")
+    monkeypatch.setattr(tray, "_build_menu", lambda: None)
+    monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)
+    assert tray.main() == 0
+    assert calls, "darwin 未注册 LaunchAgent 时应自动注册"
 
 
 def test_status_text(tmp_path, monkeypatch):
