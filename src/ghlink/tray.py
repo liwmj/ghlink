@@ -696,6 +696,15 @@ def main() -> int:
                 # ① 无条件注册（双击主动打开：标记只管开机自启，不管手动打开）
                 if not os.path.exists(plist):
                     service._write_tray_plist()
+                # ①.5 v0.5.3 实测补刀（20:35 顾笙机器侧实测）：用户取消过自启 →
+                # launchctl disable 状态残留，bootstrap/kickstart 对 disabled job 拉不起
+                # （双击进程直接落前台渲染 = LaunchServices 屏幕外 -1,1108，等于没兜住）。
+                # 双击主动打开必须反 disabled（enable 幂等）才能 bootstrap/kickstart。
+                _sp.run(
+                    ["launchctl", "enable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                    check=False,
+                    timeout=10,
+                )
                 # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
                 if la_pid in (None, 0):
                     r = _sp.run(
@@ -726,15 +735,34 @@ def main() -> int:
                     check=False,
                     timeout=10,
                 )
-                # ④ 验证 LaunchAgent 真的拉起（最多等 ~3s）；失败 → 前台渲染保底（托盘必出）
-                for _ in range(6):
+                # ④ 验证 LaunchAgent 真的拉起（bootstrap/kickstart 异步，最多等 ~5s）；
+                # 失败 → 前台渲染保底（托盘必出）
+                _la_ok = False
+                for _ in range(10):
                     _time.sleep(0.5)
-                    if service._launchagent_pid() not in (None, 0, os.getpid()):
-                        print(
-                            "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
-                            file=sys.stderr,
+                    _p = service._launchagent_pid()
+                    if _p not in (None, 0, os.getpid()):
+                        _la_ok = True
+                        break
+                if _la_ok:
+                    # ④.5 双击拉起成功但用户取消过自启 → 恢复 disable + 删 plist（意愿保留）：
+                    # 本次托盘继续跑（KeepAlive 不中断），下次登录不自启（标记只管开机自启）
+                    if service._autostart_disabled():
+                        _sp.run(
+                            ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                            check=False,
+                            timeout=10,
                         )
-                        return 0
+                        try:
+                            if os.path.exists(plist):
+                                os.unlink(plist)
+                        except OSError:
+                            pass
+                    print(
+                        "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
+                        file=sys.stderr,
+                    )
+                    return 0
                 print(
                     "[ghlink] LaunchAgent 拉起失败，本次前台渲染（保底）",
                     file=sys.stderr,
