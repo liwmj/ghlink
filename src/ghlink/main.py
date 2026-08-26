@@ -277,9 +277,21 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         # ⑤ v0.4.18（冷却门控，李工/拂晓验收）：探测失败触发切换前检查冷却期——
         # 距上次切换 < cooldown_min 时跳过切换（只累计失败计数，防频繁切换抖动）；
         # config.py 注释「切换冷却 3 小时」设计意图是门控切换，此前只节流了告警（漏实现）
+        # v0.4.25（赛博根因 2026-08-26，顾笙实测）：已写入 IP 失效时**不受冷却限制**——
+        # 冷却只防频繁切换抖动，不拦失效 IP 修复（09:50 写入 20.205.243.166 已死，
+        # 冷却期内无人切 → GitHub 打不开不自愈）。当前生效 IP 探测失败 → 立即切换。
         cooldown_sec = _cooldown_sec(cfg)
         last_sw = st.get("last_switched_at", 0) or 0
-        if not ok and last_sw and (time.time() - last_sw) < cooldown_sec:
+        cur_ip = st.get("current_ip") or ""
+        cur_ip_dead = False
+        if cur_ip:
+            try:
+                cur_ip_dead = not probe.probe_tcp_only(
+                    cur_ip, float(cfg.get("probe", {}).get("timeout_sec", 15))
+                ).get("ok", False)
+            except Exception:
+                cur_ip_dead = False
+        if not ok and last_sw and (time.time() - last_sw) < cooldown_sec and not cur_ip_dead:
             st["state"] = "degraded"
             st["last_error"] = "in cooldown after last switch, skip switch"
             st["probe"]["consecutive_failures"] = (

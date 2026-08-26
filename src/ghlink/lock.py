@@ -93,7 +93,13 @@ def acquire(lock_path: str, stale_after_sec: int = 600, extra_roots: tuple = ())
             os.makedirs(os.path.dirname(lock_path), exist_ok=True)
             # SonarCloud S5443：O_NOFOLLOW 防符号链接攻击（公共可写目录安全使用）
             flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(lock_path, flags, 0o644)
+            try:
+                fd = os.open(lock_path, flags, 0o666)
+            except PermissionError:
+                # v0.4.25（顾笙 11:26 实测）：/etc/ghlink 锁文件属 root，普通用户
+                # O_RDWR 打不开 → run 直接 PermissionError 崩溃。降级只读探测：
+                # 锁文件读权限普遍 0644，以只读 fd flock 共享锁，能读状态即可跑。
+                fd = os.open(lock_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 os.ftruncate(fd, 0)
