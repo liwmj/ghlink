@@ -690,9 +690,19 @@ def main() -> int:
             import subprocess as _sp
             import time as _time
 
-            la_pid = service._launchagent_pid()
-            if la_pid != os.getpid():
-                plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+            # v0.5.8（李工 01:21 实测定案：开启自启后重启不启动）：LaunchAgent RunAtLoad
+            # 首启时 launchctl print 可能尚未写入自身 pid（异步）→ _launchagent_pid() 返回
+            # None → None != os.getpid() 误判「双击进程」→ 走进重定向块 → bootout/bootstrap
+            # 自己折腾自己 → 验证到新实例 → return 0 自杀 → 托盘没了。
+            # 修复：用 XPC_SERVICE_NAME 精确区分启动来源——LaunchAgent 拉起 = com.ghlink.tray
+            # （实测确认），LaunchServices 双击 = application.*。XPC 匹配 LaunchAgent 时
+            # 跳过整个重定向逻辑（本该由 LaunchAgent 渲染，绝不重定向自杀）。
+            _xpc = os.environ.get("XPC_SERVICE_NAME", "")
+            _la_launched = _xpc == "com.ghlink.tray" or _xpc.startswith("com.ghlink.tray.")
+            if not _la_launched:
+                la_pid = service._launchagent_pid()
+                if la_pid != os.getpid():
+                    plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
                 # ① 无条件注册（双击主动打开：标记只管开机自启，不管手动打开）
                 if not os.path.exists(plist):
                     service._write_tray_plist()
@@ -724,7 +734,8 @@ def main() -> int:
                             text=True,
                             timeout=10,
                         )
-                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
+                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）
+                        # → bootout 清残留定义再试
                         if r.returncode != 0:
                             _sp.run(
                                 ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],

@@ -421,7 +421,41 @@ def _uninstall_self_elevate() -> Optional[int]:
             print(f"  {step}", file=sys.stderr)
         return 2
     try:
+        # v0.5.9（李工 01:21 实测：brew uninstall 通过 /usr/bin/env 管道调 ghlink uninstall，
+        # 非 TTY 环境下 sudo 读不到密码 → 卸载失败）。优先 sudo（TTY 正常交互/已有 NOPASSWD
+        # 窄放行免密）；失败时回退 osascript 授权弹窗（GUI 弹窗点密码，不依赖 TTY）。
         r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)  # NOSONAR
+        if r.returncode == 0:
+            return 0
+        # sudo 失败（非 TTY 密码不可达 / 无 NOPASSWD）→ osascript 管理员弹窗重跑
+        import sys as _sys
+
+        if _sys.platform == "darwin":
+            try:
+                _script = (
+                    'do shell script "'
+                    + exe.replace('"', '\\"')
+                    + ' uninstall" with administrator privileges'
+                )
+                r2 = _sp.run(
+                    ["osascript", "-e", _script],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if r2.returncode == 0:
+                    return 0
+                print(
+                    f"[ghlink] 卸载授权失败（用户取消或错误）: {r2.stderr.strip()}",
+                    file=sys.stderr,
+                )
+                return 2
+            except Exception as exc2:
+                print(
+                    f"[ghlink] 卸载授权弹窗异常（{exc2}），请手动运行: sudo ghlink uninstall",
+                    file=sys.stderr,
+                )
+                return 2
         return r.returncode
     except Exception as exc:
         print(
@@ -502,9 +536,45 @@ def _cleanup_uninstall_residue() -> None:
         if os.path.isdir(d):
             _sh.rmtree(d, ignore_errors=True)
             print(f"[ghlink] 已清理残留目录: {d}")
-    # v0.5.3（李工 18:45/19:03/19:44 三次强调「卸载必须干净」）：macOS 托盘 LaunchAgent
-    # 全套自清——plist + bootout + disable 状态反写 enable（disable 残留会挡重装后自启）
-    if sys.platform == "darwin":
+    # v0.5.9（拂晓 00:38 实测发现：deb enable 异步触发的首轮进程不随 uninstall/purge 退出，
+    # purge 后残留需手动 kill；赛博 01:31 清单④）：卸载时读 lock 文件定位 ghlink 自身
+    # 异步进程 PID 再 kill（只杀 ghlink.main 自身，不误伤），保证零残留。
+    _kill_ghlink_residual_procs()
+
+
+def _kill_ghlink_residual_procs() -> None:
+    """v0.5.9（清单④）：卸载时杀掉残留的 ghlink 异步进程。
+
+    读各候选 lock 文件（ghlink.lock 内容 = "PID timestamp"）定位 ghlink 自身进程，
+    存活则 SIGTERM；不模糊匹配进程名，避免误杀。
+    """
+    import signal as _sig
+
+    lock_candidates = []
+    for d in (
+        "/var/lib/ghlink",
+        "/etc/ghlink",
+        "/usr/local/etc/ghlink",
+        "/opt/homebrew/etc/ghlink",
+    ):
+        lock_candidates.append(os.path.join(d, "ghlink.lock"))
+    lock_candidates.append(os.path.join(os.path.expanduser("~/.ghlink"), "ghlink.lock"))
+    for lf in lock_candidates:
+        try:
+            if not os.path.exists(lf):
+                continue
+            with open(lf, encoding="utf-8") as f:
+                content = f.read().strip()
+            pid_str = content.split()[0] if content else ""
+            pid = int(pid_str)
+            if pid > 0 and _pid_alive(pid):
+                try:
+                    os.kill(pid, _sig.SIGTERM)
+                    print(f"[ghlink] 已终止残留进程: PID {pid}（{lf}）")
+                except OSError as exc:
+                    print(f"[ghlink] 警告：终止 PID {pid} 失败: {exc}", file=sys.stderr)
+        except (OSError, ValueError, IndexError):
+            continue
         import subprocess as _sp
 
         # uninstall 以 root 跑时 os.getuid()=0，用 SUDO_UID 还原真实用户 uid
@@ -710,6 +780,15 @@ def _enable_autostart() -> bool:
                 return False
             import subprocess as _sp
 
+            # v0.5.9（赛博 01:22 根因分析：取消自启→再开启自启，disable 残留持久化在
+            # /var/db/.../disabled.*.plist，删 plist 删不掉；_enable_autostart 只 load 不
+            # enable → 重启时 launchd 不加载 job → 不启动）。开启自启必须反 disable
+            # （enable 幂等），与双击兜底 ①.5 同命令，彻底清掉 disable 残留。
+            _sp.run(
+                ["launchctl", "enable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+                timeout=10,
+            )
             # 赛博 09:56 问题 A：plist 照写（自启动注册必须成功），
             # 已在跑时不重复 load（避免多实例），靠单实例锁兜底
             if not _tray_alive(exclude_pid=os.getpid()):
@@ -938,9 +1017,13 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                     with open(pid_file, encoding="utf-8") as f:
                         pid = int(f.read().strip())
                     # v0.5.5：PID 文件指向重定向中的双击进程 → 不算已有实例（让 B 接管）
-                    if pid > 0 and pid != exclude_pid and _pid_alive(pid):
-                        if not (redirect_pid2 and pid == redirect_pid2):
-                            return True
+                    if (
+                        pid > 0
+                        and pid != exclude_pid
+                        and _pid_alive(pid)
+                        and not (redirect_pid2 and pid == redirect_pid2)
+                    ):
+                        return True
                     # v0.4.23（赛博根因 2026-08-26）：PID 文件残留但进程已死
                     # （crash 后锁没释放）→ 删残留文件，stale 锁自动释放
                     try:
