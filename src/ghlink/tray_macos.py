@@ -69,8 +69,10 @@ def _pil_to_nsimage(img: Any) -> Any:
 def _notify(text: str) -> None:
     """macOS 通知：osascript（零依赖，不引 UNUserNotification 权限配置）。"""
     try:
+        # S6350 修复：AppleScript 字符串转义，防 text 内引号注入（SonarCloud 安全门禁）
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
         subprocess.run(
-            ["osascript", "-e", f'display notification "{text}" with title "ghlink"'],
+            ["osascript", "-e", f'display notification "{escaped}" with title "ghlink"'],
             capture_output=True,
             timeout=10,
         )
@@ -151,7 +153,7 @@ class _MacTray(NSObject):
 
     # ---- 菜单构建（口径与 tray._build_menu 一致） ----
 
-    def _build_menu(self) -> Any:
+    def _build_menu(self) -> Any:  # NOSONAR S3776 - 菜单结构逐项构建，分支多但线性可读
         menu = NSMenu.alloc().init()
         watching = service._is_enabled()
         autostart = service._is_autostart()
@@ -255,7 +257,7 @@ class _MacTray(NSObject):
         finally:
             self.refresh()
 
-    def _toggle_autostart(self) -> None:
+    def _toggle_autostart(self) -> None:  # NOSONAR S3776 - 状态机分支多，口径与 tray.py 一致
         try:
             if service._is_autostart():
                 ok = service._disable_autostart()
