@@ -551,7 +551,12 @@ def _kill_ghlink_residual_procs() -> None:
     import signal as _sig
 
     lock_candidates = []
-    for d in ("/var/lib/ghlink", "/etc/ghlink", "/usr/local/etc/ghlink", "/opt/homebrew/etc/ghlink"):
+    for d in (
+        "/var/lib/ghlink",
+        "/etc/ghlink",
+        "/usr/local/etc/ghlink",
+        "/opt/homebrew/etc/ghlink",
+    ):
         lock_candidates.append(os.path.join(d, "ghlink.lock"))
     lock_candidates.append(os.path.join(os.path.expanduser("~/.ghlink"), "ghlink.lock"))
     for lf in lock_candidates:
