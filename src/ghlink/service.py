@@ -714,7 +714,10 @@ def _disable_autostart() -> bool:
             # v0.5.2（李工 16:48 实测：点取消自启动→托盘退出）：unload 会连带终止
             # 当前运行的 job（托盘正是被这个 LaunchAgent 拉起的）= 自杀。
             # 改为 launchctl disable：只禁下次登录自启，不动当前进程，KeepAlive 保活不中断。
-            _sp.run(["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"], check=False)
+            _sp.run(
+                ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+            )
             if os.path.exists(plist):
                 os.remove(plist)
             # 意愿持久化（拂晓 16:50 补刀）：用户显式取消自启写标记，
@@ -759,12 +762,16 @@ def _launchagent_pid() -> Optional[int]:
         return None
     try:
         import subprocess as _sp
-        out = _sp.run(
-            ["launchctl", "print", f"gui/{os.getuid()}/com.ghlink.tray"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout or ""
+
+        out = (
+            _sp.run(
+                ["launchctl", "print", f"gui/{os.getuid()}/com.ghlink.tray"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+            or ""
+        )
         for line in out.splitlines():
             line = line.strip()
             if line.startswith("pid =") and "=" in line:
@@ -1021,7 +1028,10 @@ WantedBy=timers.target
 def _disable_linux() -> int:
     if os.path.exists("/etc/systemd/system/ghlink.timer"):
         platform_adapter._run_cmd(["systemctl", "disable", "--now", "ghlink.timer"])
-        for p in ("/etc/systemd/system/ghlink.timer", "/etc/systemd/system/ghlink.service"):
+        for p in (
+            "/etc/systemd/system/ghlink.timer",
+            "/etc/systemd/system/ghlink.service",
+        ):
             if os.path.exists(p):
                 os.unlink(p)
         platform_adapter._run_cmd(["systemctl", "daemon-reload"])
@@ -1128,7 +1138,10 @@ def _ensure_macos_system_components() -> bool:
         if r.returncode == 0:
             print("[ghlink] 系统组件首启自装完成（软链 + sudoers + daemon 模板）")
             return True
-        print(f"[ghlink] 系统组件自装失败（用户取消或错误）: {r.stderr.strip()}", file=sys.stderr)
+        print(
+            f"[ghlink] 系统组件自装失败（用户取消或错误）: {r.stderr.strip()}",
+            file=sys.stderr,
+        )
     except Exception as exc:
         print(f"[ghlink] 系统组件自装异常: {exc}", file=sys.stderr)
     return False
