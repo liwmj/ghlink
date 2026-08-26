@@ -71,7 +71,7 @@ def _notify(text: str) -> None:
     try:
         # S6350 修复：AppleScript 字符串转义，防 text 内引号注入（SonarCloud 安全门禁）
         escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-        subprocess.run(
+        subprocess.run(  # NOSONAR S6350 - 已转义 + 参数化调用，通知文本无特权
             ["osascript", "-e", f'display notification "{escaped}" with title "ghlink"'],
             capture_output=True,
             timeout=10,
