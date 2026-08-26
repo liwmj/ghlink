@@ -345,6 +345,14 @@ def _quit_tray(icon: Any, item: Any) -> None:
     except Exception:
         pass
     icon.stop()
+    # v0.5.3（顾笙 19:41 定位：退出托盘后 PID 锁残留死 PID，干扰下次双击重定向）：
+    # 退出时清理 PID 文件（~/.ghlink/ghlink-tray.pid），避免残留锁误导单实例判定
+    try:
+        _pid_file = service._tray_pid_file()
+        if os.path.exists(_pid_file):
+            os.unlink(_pid_file)
+    except Exception:
+        pass
 
 
 def _toggle_autostart(icon: Any, item: Any) -> None:
@@ -671,38 +679,66 @@ def main() -> int:
             service._ensure_macos_system_components()
         except Exception:
             pass
-        # v0.5.2 刀①（李工 16:34 实测：双击 APP 托盘不显示 / 图标落屏幕外 -1,1108）：
-        # LaunchServices 双击链路图标落屏幕外；LaunchAgent 脚本路径渲染正常 (940,3)。
-        # 双击启动时：若 LaunchAgent 已注册且当前进程非其拉起 → kickstart -k 强制走
-        # 脚本路径渲染（顺带杀掉屏幕外旧实例/接管残留锁），本进程退出让位。
+        # v0.5.2 刀① + v0.5.3 双击兜底（李工 19:11/19:35 实测：退出托盘→双击 / 取消自启→双击
+        # 都启动不了）：LaunchServices 双击链路图标落屏幕外 (-1,1108)；LaunchAgent 脚本路径
+        # 渲染正常 (901,3)。双击启动（非 LaunchAgent 拉起）→ 无条件确保 LaunchAgent 在跑：
+        #   ① 标记不拦手动打开：未注册时直接注册（哪怕用户取消过自启，双击=本次要托盘）
+        #   ② la_pid in (None, 0) 都走 bootstrap 兜底
+        #   ③ bootstrap 失败（exit 5: job 已加载但 not running）→ 先 bootout 清残留定义再 bootstrap
+        #   ④ kickstart -k 拉起后验证 LaunchAgent 真的在跑；失败不 return 0 → 直接前台渲染保底
         try:
-            if service._is_autostart():
-                import subprocess as _sp
+            import subprocess as _sp
+            import time as _time
 
-                la_pid = service._launchagent_pid()
-                if la_pid != os.getpid():
-                    plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
-                    if la_pid is None:
+            la_pid = service._launchagent_pid()
+            if la_pid != os.getpid():
+                plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+                # ① 无条件注册（双击主动打开：标记只管开机自启，不管手动打开）
+                if not os.path.exists(plist):
+                    service._write_tray_plist()
+                # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
+                if la_pid in (None, 0):
+                    r = _sp.run(
+                        ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
+                    if r.returncode != 0:
+                        _sp.run(
+                            ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
+                            check=False,
+                            timeout=10,
+                        )
                         _sp.run(
                             ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
                             check=False,
                             timeout=10,
                         )
-                    _sp.run(
-                        [
-                            "launchctl",
-                            "kickstart",
-                            "-k",
-                            f"gui/{os.getuid()}/com.ghlink.tray",
-                        ],
-                        check=False,
-                        timeout=10,
-                    )
-                    print(
-                        "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
-                        file=sys.stderr,
-                    )
-                    return 0
+                _sp.run(
+                    [
+                        "launchctl",
+                        "kickstart",
+                        "-k",
+                        f"gui/{os.getuid()}/com.ghlink.tray",
+                    ],
+                    check=False,
+                    timeout=10,
+                )
+                # ④ 验证 LaunchAgent 真的拉起（最多等 ~3s）；失败 → 前台渲染保底（托盘必出）
+                for _ in range(6):
+                    _time.sleep(0.5)
+                    if service._launchagent_pid() not in (None, 0, os.getpid()):
+                        print(
+                            "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
+                            file=sys.stderr,
+                        )
+                        return 0
+                print(
+                    "[ghlink] LaunchAgent 拉起失败，本次前台渲染（保底）",
+                    file=sys.stderr,
+                )
         except Exception:
             pass
 
