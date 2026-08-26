@@ -47,10 +47,12 @@ def test_tray_no_instance_starts(monkeypatch):
 
     李工 14:40 Windows 闪退根因：onefile 双进程同名，tasklist 排除自身仍误判
     引导进程为已有实例 → 托盘启动即退出。改用命名互斥体后此场景不再误伤。
+    v0.4.24：darwin 已改走原生渲染（tray_macos），本用例改回 win32 pystray 路径。
     """
     monkeypatch.setattr(tray, "HAS_TRAY", True)
-    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.sys, "platform", "win32")
     monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+    monkeypatch.setattr(tray, "_ensure_enabled_sync", lambda: True)
 
     class _FakeIcon:
         def __init__(self, *a, **k):
@@ -71,6 +73,32 @@ def test_tray_no_instance_starts(monkeypatch):
     monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)  # 跳过自动 enable
     # 无实例时不提前退出：main() 应走到 icon.run()（FakeIcon 直接返回）后返回 0
     assert tray.main() == 0
+
+
+def test_tray_darwin_native_render(monkeypatch):
+    """v0.4.24（李工 03:41 实测定案）：macOS 弃用 pystray，改走原生渲染。
+
+    pystray 0.19.5 停更，macOS 26.6.2 上进程存活但 NSStatusItem 图标不渲染；
+    darwin 分支应调 tray_macos.main()（vendored PyObjC 原生 NSStatusItem+NSMenu）。
+    """
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+
+    from ghlink import tray_macos
+
+    monkeypatch.setattr(tray_macos, "main", lambda: 0)
+    assert tray.main() == 0
+
+
+def test_tray_darwin_native_render_no_pyobjc(monkeypatch):
+    """macOS 缺 PyObjC（异常环境/裸 python）：原生渲染返回 2 并提示，不崩溃。"""
+    monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+
+    from ghlink import tray_macos
+
+    monkeypatch.setattr(tray_macos, "HAS_NATIVE", False)
+    assert tray_macos.main() == 2
 
 
 def test_status_text(tmp_path, monkeypatch):

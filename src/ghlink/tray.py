@@ -641,6 +641,29 @@ def main() -> int:
     except Exception:
         pass
 
+    # v0.4.24（李工 03:41 实测定案）：macOS 弃用 pystray——0.19.5（2023-09 停更）
+    # 在 macOS 26.6.2 上进程存活但 NSStatusItem 菜单栏图标不渲染；改用 vendored
+    # PyObjC 原生渲染（tray_macos.py）。Windows 保持 pystray（正常）。
+    # 注意：darwin 分支在 HAS_TRAY 检查之前分流——原生渲染不依赖 pystray。
+    if sys.platform == "darwin":
+        # ③ 单实例锁（Windows 命名互斥体 / macOS pgrep）——darwin 也要防多开
+        try:
+            if service._tray_single_instance():
+                print(
+                    "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
+                    file=sys.stderr,
+                )
+                return 0
+        except Exception:
+            pass
+        # ③ macOS Dock 隐藏（v0.2.16，李工 18:43 反馈：程序坞一直显示 Python）
+        _hide_dock_icon()
+        # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
+        service._write_tray_pid()
+        from . import tray_macos
+
+        return tray_macos.main()
+
     if not HAS_TRAY:  # pragma: no cover
         print(
             "[ghlink] 缺少托盘依赖（pystray/Pillow）。"
