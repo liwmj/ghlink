@@ -715,52 +715,54 @@ def main() -> int:
                         _f.write(str(os.getpid()))
                 except Exception:
                     pass
-                # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
-                if la_pid in (None, 0):
-                    r = _sp.run(
-                        ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
-                        capture_output=True,
-                        text=True,
+                try:
+                    # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
+                    if la_pid in (None, 0):
+                        r = _sp.run(
+                            ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
+                        if r.returncode != 0:
+                            _sp.run(
+                                ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
+                                check=False,
+                                timeout=10,
+                            )
+                            _sp.run(
+                                ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                                check=False,
+                                timeout=10,
+                            )
+                    _sp.run(
+                        [
+                            "launchctl",
+                            "kickstart",
+                            "-k",
+                            f"gui/{os.getuid()}/com.ghlink.tray",
+                        ],
+                        check=False,
                         timeout=10,
                     )
-                    # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
-                    if r.returncode != 0:
-                        _sp.run(
-                            ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
-                            check=False,
-                            timeout=10,
-                        )
-                        _sp.run(
-                            ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
-                            check=False,
-                            timeout=10,
-                        )
-                _sp.run(
-                    [
-                        "launchctl",
-                        "kickstart",
-                        "-k",
-                        f"gui/{os.getuid()}/com.ghlink.tray",
-                    ],
-                    check=False,
-                    timeout=10,
-                )
-                # ④ 验证 LaunchAgent 真的拉起（bootstrap/kickstart 异步，最多等 ~5s）；
-                # 失败 → 前台渲染保底（托盘必出）
-                _la_ok = False
-                for _ in range(10):
-                    _time.sleep(0.5)
-                    _p = service._launchagent_pid()
-                    if _p not in (None, 0, os.getpid()):
-                        _la_ok = True
-                        break
-                # 清 redirecting 标记（无论成败，A 使命结束）
-                try:
-                    _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
-                    if os.path.exists(_rd):
-                        os.unlink(_rd)
-                except OSError:
-                    pass
+                    # ④ 验证 LaunchAgent 真的拉起（bootstrap/kickstart 异步，最多等 ~5s）；
+                    # 失败 → 前台渲染保底（托盘必出）
+                    _la_ok = False
+                    for _ in range(10):
+                        _time.sleep(0.5)
+                        _p = service._launchagent_pid()
+                        if _p not in (None, 0, os.getpid()):
+                            _la_ok = True
+                            break
+                finally:
+                    # 清 redirecting 标记（无论成败/异常，A 使命结束）
+                    try:
+                        _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
+                        if os.path.exists(_rd):
+                            os.unlink(_rd)
+                    except OSError:
+                        pass
                 if _la_ok:
                     # ④.5 双击拉起成功但用户取消过自启 → 恢复 disable + 删 plist（意愿保留）：
                     # 本次托盘继续跑（KeepAlive 不中断），下次登录不自启（标记只管开机自启）
