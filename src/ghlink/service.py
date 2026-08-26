@@ -265,9 +265,16 @@ def _ensure_config() -> None:
 
     cfg_path = _config_path()
     if not os.path.exists(cfg_path):
-        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share（v0.2.19 补 /opt/homebrew）
+        # 候选模板：当前目录 / 包内（wheel 内置 v0.5.9）/ 仓库 / 安装包 libexec / 系统 share
         candidates = [
             os.path.join(os.getcwd(), "config.example.json"),
+            # v0.5.10（拂晓 02:03 Linux 预检 blocker ③）：wheel 已内置 config.example.json
+            # （package-data），但候选列表缺包内路径 dirname(__file__) → pip 场景模板搜不到
+            # → enable 报「找不到模板跳过配置落位」。补包内路径，pip 装后可直接命中。
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "config.example.json",
+            ),
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "config.example.json",
