@@ -20,20 +20,28 @@ from typing import Optional
 from . import hosts_manager, platform_adapter, state
 from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
 
+# v0.4.25（SonarCloud S1192）：ghlink 安装路径常量——多处（wrapper 候选/sudoers
+# 模板/PYTHONPATH）共用，防字面量重复超标。
+_GHLINK_APP_WRAPPER = "/Applications/ghlink.app/Contents/MacOS/ghlink"
+_GHLINK_APP_LIBEXEC = "/Applications/ghlink.app/Contents/libexec"
+_GHLINK_BIN = "/usr/local/bin/ghlink"
+_GHLINK_HOMEBREW_BIN = "/opt/homebrew/bin/ghlink"
+_GHLINK_USR_BIN = "/usr/bin/ghlink"
+
 
 def _wrapper_candidates() -> tuple:
     """ghlink wrapper 候选路径（含 .app 绝对路径，GUI/launchd PATH 受限场景兜底）。
 
     v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 应用（Finder/LaunchServices 双击）
     PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，且 relocate 事故后 /usr/local/bin/ghlink
-    软链会断——候选列表必须含 .app 内绝对路径，且三处（_python_cmd/_find_wrapper/
+    软链会断——候选列表必须含 .app 内绝对路径，且四处（_python_cmd/_find_wrapper/
     _macos_daemon_command）共用，防 SonarCloud 重复率超标。
     """
     return (
-        "/Applications/ghlink.app/Contents/MacOS/ghlink",
-        "/usr/local/bin/ghlink",
-        "/opt/homebrew/bin/ghlink",
-        "/usr/bin/ghlink",
+        _GHLINK_APP_WRAPPER,
+        _GHLINK_BIN,
+        _GHLINK_HOMEBREW_BIN,
+        _GHLINK_USR_BIN,
     )
 
 
@@ -983,9 +991,9 @@ def _ensure_sudoers_macos() -> None:
         user = os.environ.get("SUDO_USER") or getpass.getuser()
         content = (
             "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
-            f"{user} ALL=(root) NOPASSWD: /usr/local/bin/ghlink\n"
-            'Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"\n'
-            "Defaults!/usr/local/bin/ghlink env_keep += "
+            f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
+            f"Defaults!{_GHLINK_BIN} env_keep += \"GH_TOKEN\"\n"
+            f"Defaults!{_GHLINK_BIN} env_keep += "
             '"HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
         )
         tmp = sudoers_d + ".tmp"
@@ -1058,7 +1066,7 @@ def _macos_daemon_command() -> str:
 def _macos_pythonpath() -> str:
     """macOS 注入 PYTHONPATH：.app libexec + vendor（与 wrapper 一致，双保险）。"""
     if sys.platform == "darwin":
-        app = "/Applications/ghlink.app/Contents/libexec"
+        app = _GHLINK_APP_LIBEXEC
         if os.path.isdir(app):
             return f"{app}:{app}/vendor"
     return ""
