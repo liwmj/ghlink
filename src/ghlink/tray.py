@@ -724,7 +724,8 @@ def main() -> int:
                             text=True,
                             timeout=10,
                         )
-                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
+                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）
+                        # → bootout 清残留定义再试
                         if r.returncode != 0:
                             _sp.run(
                                 ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
