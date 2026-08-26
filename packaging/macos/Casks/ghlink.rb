@@ -1,6 +1,6 @@
 cask "ghlink" do
   version "0.5.0"
-  sha256 "REPLACE_WITH_DMG_SHA256"
+  sha256 "b86ec4db7de32485da33b38138db4f100a7be285938f0358067815a16132bdf0"
 
   # v0.5.0（李工 13:45 拍板 dmg 路线恢复，拂晓 13:59 定格）：dmg+cask 混合方案
   # - dmg 管 app：拖入 /Applications 即用，无 postinstall/relocate/收据链（Code 112 类问题根治）
@@ -23,10 +23,16 @@ cask "ghlink" do
   depends_on formula: "python@3.14"
 
   # 卸载：ghlink uninstall 彻底清理（停任务 + 还原 hosts + 删配置）
+  # v0.5.11（赛博 02:50 根因：CI 发版 sync 用写死路径模板覆盖 tap 容错修复 +
+  # 软链靠 app 首启才建，brew install 后未首启 → 卸载按写死路径找 → 报错）。
+  # uninstall script 改 /bin/bash -c 容错版：双架构路径自适应（ARM=/opt/homebrew，
+  # Intel=/usr/local）+ 存在性判断，软链缺失时静默跳过不炸；ghlink uninstall
+  # 内部自提权（sudo 失败回退 osascript 弹窗），sudo: false。
   uninstall script: {
-             executable: "/usr/local/bin/ghlink",
-             args:       ["uninstall"],
-             sudo:       false,
+             executable: "/bin/bash",
+             args:       ["-c",
+                          "if [ -x /opt/homebrew/bin/ghlink ]; then /opt/homebrew/bin/ghlink uninstall; "                           "elif [ -x /usr/local/bin/ghlink ]; then /usr/local/bin/ghlink uninstall; fi"],
+             sudo:       true,
            }
 
   # zap：彻底清理残留（brew uninstall --zap ghlink 时执行，二次兜底）
