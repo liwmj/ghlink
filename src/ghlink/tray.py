@@ -258,12 +258,14 @@ def _cli_command(subcmd: str) -> list:
     # v0.4.23（赛博根因 2026-08-26）：GUI 应用（Finder/LaunchServices 双击）PATH 只有
     # /usr/bin:/bin:/usr/sbin:/sbin，shutil.which 找不到 /usr/local/bin/ghlink → 退回
     # python -m 不匹配 sudoers NOPASSWD → 提权失败（与 08-25 卸载弹密码同病根）。
-    # 改为已知安装路径绝对优先（/usr/local/bin + /opt/homebrew/bin），不依赖 PATH。
+    # v0.4.25：统一复用 service._find_wrapper()（含 .app 绝对路径，SonarCloud 消重）。
     import shutil as _shutil
 
+    w = service._find_wrapper()
+    if w:
+        return [w, subcmd]
+    # venv/Scripts 场景（非 .app/brew 安装位）
     for cand in (
-        "/usr/local/bin/ghlink",  # Intel macOS 安装位（sudoers 放行路径）
-        "/opt/homebrew/bin/ghlink",  # Apple Silicon macOS 安装位
         os.path.join(os.path.dirname(sys.executable), "ghlink"),  # venv/bin/ghlink
         os.path.join(os.path.dirname(sys.executable), "ghlink.exe"),  # Windows Scripts
     ):
