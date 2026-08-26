@@ -938,9 +938,13 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                     with open(pid_file, encoding="utf-8") as f:
                         pid = int(f.read().strip())
                     # v0.5.5：PID 文件指向重定向中的双击进程 → 不算已有实例（让 B 接管）
-                    if pid > 0 and pid != exclude_pid and _pid_alive(pid):
-                        if not (redirect_pid2 and pid == redirect_pid2):
-                            return True
+                    if (
+                        pid > 0
+                        and pid != exclude_pid
+                        and _pid_alive(pid)
+                        and not (redirect_pid2 and pid == redirect_pid2)
+                    ):
+                        return True
                     # v0.4.23（赛博根因 2026-08-26）：PID 文件残留但进程已死
                     # （crash 后锁没释放）→ 删残留文件，stale 锁自动释放
                     try:
