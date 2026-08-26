@@ -648,6 +648,13 @@ def _enable_autostart() -> bool:
             # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
             # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
             exe = _find_wrapper() or sys.executable
+            # v0.5.2（拂晓 16:50 五刀②）：重新开启自启时清除用户取消意愿标记
+            try:
+                _marker = os.path.expanduser("~/.ghlink/autostart-disabled")
+                if os.path.exists(_marker):
+                    os.remove(_marker)
+            except Exception:
+                pass
             with open(plist, "w", encoding="utf-8") as f:
                 # v0.4.27（李工 13:33 实测：退出托盘后二次打开 APP 托盘不回来）：
                 # 原 plist 仅 RunAtLoad（登录拉一次），进程退出后 launchctl 不重启。
@@ -704,9 +711,21 @@ def _disable_autostart() -> bool:
             plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
             import subprocess as _sp
 
-            _sp.run(["launchctl", "unload", plist], check=False)
+            # v0.5.2（李工 16:48 实测：点取消自启动→托盘退出）：unload 会连带终止
+            # 当前运行的 job（托盘正是被这个 LaunchAgent 拉起的）= 自杀。
+            # 改为 launchctl disable：只禁下次登录自启，不动当前进程，KeepAlive 保活不中断。
+            _sp.run(["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"], check=False)
             if os.path.exists(plist):
                 os.remove(plist)
+            # 意愿持久化（拂晓 16:50 补刀）：用户显式取消自启写标记，
+            # 防止 main() 首启自动注册逻辑反噬（取消后下次启动又自动注册）
+            try:
+                marker = os.path.expanduser("~/.ghlink/autostart-disabled")
+                os.makedirs(os.path.dirname(marker), exist_ok=True)
+                with open(marker, "w", encoding="utf-8") as f:
+                    f.write("1")
+            except Exception:
+                pass
             return True
         else:
             desktop = os.path.expanduser("~/.config/autostart/ghlink-tray.desktop")
@@ -715,6 +734,47 @@ def _disable_autostart() -> bool:
             return True
     except Exception:
         return False
+
+
+def _autostart_disabled() -> bool:
+    """用户是否显式取消过开机自启动（v0.5.2 意愿持久化标记）。
+
+    李工 16:48 实测：取消自启动 → 托盘退出（unload 自杀）；拂晓 16:50 补刀：
+    自动注册逻辑会反噬取消意愿——main() 首启检测未注册又自动注册回来。
+    取消时写 ~/.ghlink/autostart-disabled，main() 见到标记不再自动注册。
+    """
+    try:
+        return os.path.exists(os.path.expanduser("~/.ghlink/autostart-disabled"))
+    except Exception:
+        return False
+
+
+def _launchagent_pid() -> Optional[int]:
+    """macOS LaunchAgent(com.ghlink.tray) 当前实例 PID，无则 None（v0.5.2 刀①）。
+
+    双击启动重定向用：判断当前进程是否由 LaunchAgent 拉起（launchctl print 的
+    pid 与自身一致 = LaunchAgent 路径；不一致 = 双击/脚本路径）。
+    """
+    if sys.platform != "darwin":
+        return None
+    try:
+        import subprocess as _sp
+        out = _sp.run(
+            ["launchctl", "print", f"gui/{os.getuid()}/com.ghlink.tray"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout or ""
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("pid =") and "=" in line:
+                try:
+                    return int(line.split("=", 1)[1].strip())
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return None
 
 
 def _is_registered() -> bool:
