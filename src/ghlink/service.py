@@ -265,9 +265,16 @@ def _ensure_config() -> None:
 
     cfg_path = _config_path()
     if not os.path.exists(cfg_path):
-        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share（v0.2.19 补 /opt/homebrew）
+        # 候选模板：当前目录 / 包内（wheel 内置 v0.5.9）/ 仓库 / 安装包 libexec / 系统 share
         candidates = [
             os.path.join(os.getcwd(), "config.example.json"),
+            # v0.5.10（拂晓 02:03 Linux 预检 blocker ③）：wheel 已内置 config.example.json
+            # （package-data），但候选列表缺包内路径 dirname(__file__) → pip 场景模板搜不到
+            # → enable 报「找不到模板跳过配置落位」。补包内路径，pip 装后可直接命中。
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "config.example.json",
+            ),
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "config.example.json",
@@ -487,6 +494,12 @@ def uninstall() -> int:
         print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
     else:
         print("[ghlink] 警告：hosts 段落移除失败（权限？），请手动检查", file=sys.stderr)
+    # v0.5.11（拂晓 02:38 预检 ④ 顺序 bug 实锤，赛博 02:43 核实）：uninstall 先删配置目录
+    # （ghlink.lock 随之被删）再调 _kill_ghlink_residual_procs() → 读 lock 拿 PID 时文件
+    # 已没了 → 跳过 kill → 异步首轮进程残留。kill 必须前置：删目录前 lock 还在，
+    # 读 PID 精确杀；_cleanup_uninstall_residue() 内保留原调用做幂等双保险（此时 lock
+    # 已删自然跳过，无副作用）。
+    _kill_ghlink_residual_procs()
     # 删除配置目录（当前平台生效的配置/状态/缓存）
     cfg_path = _config_path()
     cfg_dir = os.path.dirname(os.path.abspath(cfg_path)) if cfg_path else ""

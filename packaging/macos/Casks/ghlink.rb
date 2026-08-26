@@ -23,9 +23,15 @@ cask "ghlink" do
   depends_on formula: "python@3.14"
 
   # 卸载：ghlink uninstall 彻底清理（停任务 + 还原 hosts + 删配置）
+  # v0.5.11（赛博 02:50 根因：CI 发版 sync 用写死路径模板覆盖 tap 容错修复 +
+  # 软链靠 app 首启才建，brew install 后未首启 → 卸载按写死路径找 → 报错）。
+  # uninstall script 改 /bin/bash -c 容错版：双架构路径自适应（ARM=/opt/homebrew，
+  # Intel=/usr/local）+ 存在性判断，软链缺失时静默跳过不炸；ghlink uninstall
+  # 内部自提权（sudo 失败回退 osascript 弹窗），sudo: false。
   uninstall script: {
-             executable: "/usr/local/bin/ghlink",
-             args:       ["uninstall"],
+             executable: "/bin/bash",
+             args:       ["-c",
+                          "if [ -x /opt/homebrew/bin/ghlink ]; then /opt/homebrew/bin/ghlink uninstall; "                           "elif [ -x /usr/local/bin/ghlink ]; then /usr/local/bin/ghlink uninstall; fi"],
              sudo:       false,
            }
 
