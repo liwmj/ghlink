@@ -503,6 +503,30 @@ def _cleanup_uninstall_residue() -> None:
             _sh.rmtree(d, ignore_errors=True)
             print(f"[ghlink] 已清理残留目录: {d}")
 
+    # v0.5.3（李工 19:44 强调：卸载必须干净）：macOS 托盘 LaunchAgent 残留清理——
+    # plist + job（bootout）+ disable 反写，否则重装后旧 job/标记残留导致
+    # 「双击没反应」复现（v0.5.2 教训：autostart-disabled 标记残留是元凶）。
+    if sys.platform == "darwin":
+        import subprocess as _sp
+
+        label = f"gui/{os.getuid()}/com.ghlink.tray"
+        _sp.run(["launchctl", "bootout", label], check=False)
+        _sp.run(["launchctl", "enable", label], check=False)  # 反写 disable 标记
+        plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+        if os.path.exists(plist):
+            try:
+                os.unlink(plist)
+                print(f"[ghlink] 已清理 LaunchAgent: {plist}")
+            except OSError as exc:
+                print(f"[ghlink] 警告：清理 {plist} 失败: {exc}", file=sys.stderr)
+        # 标记文件（~/.ghlink 已整体删除，这里兜底确认）
+        marker = os.path.expanduser("~/.ghlink/autostart-disabled")
+        if os.path.exists(marker):
+            try:
+                os.unlink(marker)
+            except OSError:
+                pass
+
 
 def status() -> int:
     """显示当前状态 + 值守状态。始终返回 0。"""
@@ -615,9 +639,11 @@ def _is_autostart() -> bool:
                 winreg.QueryValueEx(key, "ghlink-tray")
                 return True
         elif sys.platform == "darwin":
+            # v0.5.3（李工 19:41 实测）：取消自启后 plist 保留（只 launchctl disable），
+            # 菜单勾选必须反映真实自启状态——plist 在但用户取消过 = 不自启
             return os.path.exists(
                 os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
-            )
+            ) and not _autostart_disabled()
         else:
             return os.path.exists(os.path.expanduser("~/.config/autostart/ghlink-tray.desktop"))
     except Exception:
@@ -714,12 +740,14 @@ def _disable_autostart() -> bool:
             # v0.5.2（李工 16:48 实测：点取消自启动→托盘退出）：unload 会连带终止
             # 当前运行的 job（托盘正是被这个 LaunchAgent 拉起的）= 自杀。
             # 改为 launchctl disable：只禁下次登录自启，不动当前进程，KeepAlive 保活不中断。
+            # v0.5.3（李工 19:41 实测：取消自启后双击 APP 起不来）：不再删 plist——
+            # plist 保留则 job 定义仍在，双击 kickstart 永远有目标可拉（标记只管
+            # 「开机自启」，不管「手动打开」）；删 plist 会连同 job 一起移除，
+            # 双击 bootstrap 报 exit 5 拉不起。
             _sp.run(
                 ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
                 check=False,
             )
-            if os.path.exists(plist):
-                os.remove(plist)
             # 意愿持久化（拂晓 16:50 补刀）：用户显式取消自启写标记，
             # 防止 main() 首启自动注册逻辑反噬（取消后下次启动又自动注册）
             try:
@@ -903,7 +931,18 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                 except OSError:
                     pass
             # 兜底：pgrep（PID 文件缺失/损坏时）
-            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink\\.main tray"])
+            # v0.5.3（顾笙诊断坑 2026-08-26）：pgrep -f "ghlink.main tray" 会匹配到
+            # 含该字符串的诊断命令行（exec 自匹配）→ 误判已有实例 → LaunchAgent
+            # 实例启动即退出。精确锚定：优先匹配 .app wrapper 路径（生产 LaunchAgent/
+            # 双击统一入口 /Applications/ghlink.app/Contents/MacOS/ghlink tray），
+            # python -m 仅 dev 兜底且必须排除自身 PID。
+            out = platform_adapter._run_cmd_output(
+                ["pgrep", "-f", "ghlink\\.app/Contents/MacOS/ghlink tray"]
+            )
+            if not out:
+                out = platform_adapter._run_cmd_output(
+                    ["pgrep", "-f", "ghlink\\.main tray"]
+                )
             pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
             if exclude_pid:
                 pids = [p for p in pids if p != exclude_pid]
