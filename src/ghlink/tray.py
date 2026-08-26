@@ -705,6 +705,16 @@ def main() -> int:
                     check=False,
                     timeout=10,
                 )
+                # ①.6 v0.5.5（李工 20:58 实测定案：退出托盘→再双击无反应）：
+                # 写 redirecting 标记（自身 pid）——kickstart 拉起的新实例做单实例检查时
+                # 跳过该 pid，避免 A/B 并存期互判自杀（B 被误判「已有实例」即退）。
+                try:
+                    _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
+                    os.makedirs(os.path.dirname(_rd), exist_ok=True)
+                    with open(_rd, "w", encoding="utf-8") as _f:
+                        _f.write(str(os.getpid()))
+                except Exception:
+                    pass
                 # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
                 if la_pid in (None, 0):
                     r = _sp.run(
@@ -744,6 +754,13 @@ def main() -> int:
                     if _p not in (None, 0, os.getpid()):
                         _la_ok = True
                         break
+                # 清 redirecting 标记（无论成败，A 使命结束）
+                try:
+                    _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
+                    if os.path.exists(_rd):
+                        os.unlink(_rd)
+                except OSError:
+                    pass
                 if _la_ok:
                     # ④.5 双击拉起成功但用户取消过自启 → 恢复 disable + 删 plist（意愿保留）：
                     # 本次托盘继续跑（KeepAlive 不中断），下次登录不自启（标记只管开机自启）

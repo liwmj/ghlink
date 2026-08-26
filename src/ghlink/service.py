@@ -937,6 +937,21 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                     os.unlink(pid_file)
                 except OSError:
                     pass
+            # v0.5.5（顾笙 20:58 实测定案，李工 20:58 操作复现：退出→双击无反应）：
+            # 双击进程（LaunchServices 会话）kickstart 拉起 LaunchAgent 实例后自身未退出，
+            # 新实例做单实例检查时 ps 匹配到双击进程的 "-m ghlink.main tray" 命令行 →
+            # 误判已有实例 → 新实例立即退出（job runs+1 但 state=not running）→
+            # 双击进程验证失败落前台渲染 = LaunchServices 屏幕外 (-1,1108) = 无反应。
+            # 修复：双击进程 kickstart 前写 redirecting.pid（自身 pid），
+            # 单实例检查跳过该 pid（A/B 并存期不互判），B 渲染成功后 A 退出并清标记。
+            redirect_pid: Optional[int] = None
+            try:
+                _rd = os.path.join(os.path.expanduser("~"), ".ghlink", "redirecting.pid")
+                if os.path.exists(_rd):
+                    with open(_rd, encoding="utf-8") as _f:
+                        redirect_pid = int(_f.read().strip())
+            except (OSError, ValueError):
+                redirect_pid = None
             # 兜底：pgrep（PID 文件缺失/损坏时）
             # v0.5.3（顾笙 19:12 实测定案）：pgrep -f "ghlink\\.main tray" 会自匹配——
             # 诊断命令/exec 命令行含该字符串的进程也被匹配 → 误判已有实例 → 新实例启动即退。
@@ -960,6 +975,9 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                 except ValueError:
                     continue
                 if exclude_pid and _pid == exclude_pid:
+                    continue
+                # v0.5.5：重定向中的双击进程不算已有实例（防互判自杀）
+                if redirect_pid and _pid == redirect_pid:
                     continue
                 return True
             return False
