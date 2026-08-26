@@ -724,8 +724,7 @@ def main() -> int:
                             text=True,
                             timeout=10,
                         )
-                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）
-                        # → bootout 清残留定义再试
+                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）→ bootout 清残留定义再试
                         if r.returncode != 0:
                             _sp.run(
                                 ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
@@ -764,20 +763,22 @@ def main() -> int:
                             os.unlink(_rd)
                     except OSError:
                         pass
+                # ④.5 意愿恢复（v0.5.5 李工 22:04 实测定案：取消自启后 plist 残留 enabled →
+                # 下次登录自启 = 关不掉）：双击为了拉起临时重建 plist + enable，
+                # 但用户取消过自启（标记在）→ **无条件**恢复 disable + 删 plist
+                # （不管 _la_ok 成败/异常，只要标记在就恢复意愿；本次托盘 KeepAlive 不中断）
+                if service._autostart_disabled():
+                    _sp.run(
+                        ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                        check=False,
+                        timeout=10,
+                    )
+                    try:
+                        if os.path.exists(plist):
+                            os.unlink(plist)
+                    except OSError:
+                        pass
                 if _la_ok:
-                    # ④.5 双击拉起成功但用户取消过自启 → 恢复 disable + 删 plist（意愿保留）：
-                    # 本次托盘继续跑（KeepAlive 不中断），下次登录不自启（标记只管开机自启）
-                    if service._autostart_disabled():
-                        _sp.run(
-                            ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
-                            check=False,
-                            timeout=10,
-                        )
-                        try:
-                            if os.path.exists(plist):
-                                os.unlink(plist)
-                        except OSError:
-                            pass
                     print(
                         "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
                         file=sys.stderr,
@@ -804,7 +805,21 @@ def main() -> int:
     # 误判引导进程为已有实例 → 托盘启动即退出。改用 _tray_single_instance()
     # （Windows 命名互斥体，macOS/Linux 保留 pgrep 排除自身）
     try:
-        if service._tray_single_instance():
+        # v0.5.5（赛博 21:41 竞态根因，李工 21:35 实测定案）：
+        # 退出→双击时 A（双击进程）写 redirecting.pid → kickstart 拉起 B →
+        # A 验证到 B 后立即清 redirecting.pid → return 0；但 B 启动到单实例检查
+        # 时 A 可能还没完全退出 ps 列表、标记已清 → B 误判 A 是已有实例 → B 自杀
+        # → 托盘没起来 = 无反应。LaunchAgent + kickstart -k 本身就保证唯一
+        # （kickstart 先杀旧实例再拉起），B 被 LaunchAgent 拉起（la_pid == 自身）
+        # 时直接跳过 pgrep 单实例检查，pgrep 只会误判。
+        _skip_single_check = False
+        if sys.platform == "darwin":
+            try:
+                if service._launchagent_pid() == os.getpid():
+                    _skip_single_check = True
+            except Exception:
+                pass
+        if not _skip_single_check and service._tray_single_instance():
             print(
                 "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
                 file=sys.stderr,
