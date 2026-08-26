@@ -514,6 +514,24 @@ def uninstall() -> int:
     return 0
 
 
+def _real_user_home() -> str:
+    """root 上下文下还原真实用户 home（v0.5.12 拂晓 03:23 预检发现）。
+
+    brew cask uninstall 走 sudo:true，以 root 运行时 expanduser(~)=/var/root，
+    用户级残留（LaunchAgent plist、~/.ghlink、lock）会漏删。用 SUDO_USER 还原：
+    优先 pwd 查真实用户 home，查不到回退 expanduser("~")（root 时=/var/root）。
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            import pwd
+
+            return pwd.getpwnam(sudo_user).pw_dir
+        except (ImportError, KeyError):
+            pass
+    return os.path.expanduser("~")
+
+
 def _cleanup_uninstall_residue() -> None:
     """卸载残留清理（v0.4.14，root 上下文执行）。
 
@@ -541,7 +559,7 @@ def _cleanup_uninstall_residue() -> None:
         except OSError as exc:
             print(f"[ghlink] 警告：清理 {sudoers_d} 失败: {exc}", file=sys.stderr)
     for d in (
-        os.path.expanduser("~/.ghlink"),
+        os.path.join(_real_user_home(), ".ghlink"),
         "/var/lib/ghlink",
         "/usr/local/etc/ghlink",
         "/opt/homebrew/etc/ghlink",
@@ -571,7 +589,7 @@ def _kill_ghlink_residual_procs() -> None:
         "/opt/homebrew/etc/ghlink",
     ):
         lock_candidates.append(os.path.join(d, "ghlink.lock"))
-    lock_candidates.append(os.path.join(os.path.expanduser("~/.ghlink"), "ghlink.lock"))
+    lock_candidates.append(os.path.join(_real_user_home(), ".ghlink", "ghlink.lock"))
     for lf in lock_candidates:
         try:
             if not os.path.exists(lf):
@@ -605,11 +623,9 @@ def _kill_ghlink_residual_procs() -> None:
         # 反写 disable（enable 幂等；不残留禁用状态，重装后自启/注册不受挡）
         _sp.run(["launchctl", "enable", _label], check=False, timeout=10)
         # v0.5.12：root 跑 uninstall 时 expanduser(~)=/var/root，用 SUDO_USER 还原真实用户 home
-        _home = os.path.expanduser("~")
-        _sudo_user = os.environ.get("SUDO_USER")
-        if _sudo_user:
-            _home = os.path.expanduser(f"~{_sudo_user}")
-        _la_plist = os.path.join(_home, "Library", "LaunchAgents", "com.ghlink.tray.plist")
+        _la_plist = os.path.join(
+            _real_user_home(), "Library", "LaunchAgents", "com.ghlink.tray.plist"
+        )
         if os.path.exists(_la_plist):
             try:
                 os.unlink(_la_plist)
