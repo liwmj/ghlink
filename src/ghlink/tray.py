@@ -344,6 +344,15 @@ def _quit_tray(icon: Any, item: Any) -> None:
                 _run_privileged("disable")
     except Exception:
         pass
+    # v0.5.3（李工 19:41 实测：退出托盘后残留死 PID 是「双击没反应」元凶之一）：
+    # 退出前清理 PID 文件，避免下次双击被 stale 锁干扰（_tray_alive 会删残留，
+    # 但主动清更干净，且避免 pgrep 兜底误判）。
+    try:
+        pid_file = service._tray_pid_file()
+        if os.path.exists(pid_file):
+            os.unlink(pid_file)
+    except Exception:
+        pass
     icon.stop()
 
 
@@ -675,34 +684,51 @@ def main() -> int:
         # LaunchServices 双击链路图标落屏幕外；LaunchAgent 脚本路径渲染正常 (940,3)。
         # 双击启动时：若 LaunchAgent 已注册且当前进程非其拉起 → kickstart -k 强制走
         # 脚本路径渲染（顺带杀掉屏幕外旧实例/接管残留锁），本进程退出让位。
+        # v0.5.3（李工 19:41 实测：取消自启后双击启动不了）：
+        # ① 双击 kickstart 不 gate 在 _is_autostart()——手动双击 = 明确要托盘，
+        #    无条件先注册再 kickstart（标记只管开机自启、不管手动打开）
+        # ② la_pid in (None, 0) 都走 bootstrap（job not running 时 launchctl print 无 pid 行 → None）
+        # ③ bootstrap 前先 bootout 清残留定义（job 已加载但 not running 时 bootstrap 报 exit 5）
+        # ④ kickstart 失败不 return 0，落回下方 pystray 前台渲染兜底（保底托盘必出）
         try:
-            if service._is_autostart():
-                import subprocess as _sp
+            import subprocess as _sp
 
-                la_pid = service._launchagent_pid()
-                if la_pid != os.getpid():
-                    plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
-                    if la_pid is None:
-                        _sp.run(
-                            ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
-                            check=False,
-                            timeout=10,
-                        )
+            la_pid = service._launchagent_pid()
+            if la_pid != os.getpid():
+                plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+                if la_pid in (None, 0):
+                    # job 已加载但 not running → 先 bootout 清残留定义再 bootstrap
                     _sp.run(
-                        [
-                            "launchctl",
-                            "kickstart",
-                            "-k",
-                            f"gui/{os.getuid()}/com.ghlink.tray",
-                        ],
+                        ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
                         check=False,
                         timeout=10,
                     )
+                    _sp.run(
+                        ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                        check=False,
+                        timeout=10,
+                    )
+                r = _sp.run(
+                    [
+                        "launchctl",
+                        "kickstart",
+                        "-k",
+                        f"gui/{os.getuid()}/com.ghlink.tray",
+                    ],
+                    check=False,
+                    timeout=10,
+                )
+                if r.returncode == 0:
                     print(
                         "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
                         file=sys.stderr,
                     )
                     return 0
+                # kickstart 失败：不退出，落回下方 pystray 前台渲染（保底托盘必出）
+                print(
+                    "[ghlink] 双击启动 → kickstart 失败，落回前台渲染",
+                    file=sys.stderr,
+                )
         except Exception:
             pass
 
