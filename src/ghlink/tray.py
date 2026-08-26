@@ -763,21 +763,23 @@ def main() -> int:
                             os.unlink(_rd)
                     except OSError:
                         pass
-                # ④.5 意愿恢复（v0.5.5 李工 22:04 实测定案：取消自启后 plist 残留 enabled →
-                # 下次登录自启 = 关不掉）：双击为了拉起临时重建 plist + enable，
-                # 但用户取消过自启（标记在）→ **无条件**恢复 disable + 删 plist
-                # （不管 _la_ok 成败/异常，只要标记在就恢复意愿；本次托盘 KeepAlive 不中断）
-                if service._autostart_disabled():
-                    _sp.run(
-                        ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
-                        check=False,
-                        timeout=10,
-                    )
-                    try:
-                        if os.path.exists(plist):
-                            os.unlink(plist)
-                    except OSError:
-                        pass
+                    # ④.5 意愿恢复（v0.5.5 李工 22:04 实测定案：取消自启后 plist 残留 enabled →
+                    # 下次登录自启 = 关不掉；李工 22:10 再实测：关掉自启→退出托盘→再启动 APP →
+                    # 自启动又打开）。双击为了拉起临时重建 plist + enable，但用户取消过自启
+                    # （标记在）→ **无条件**恢复 disable + 删 plist——放在 finally 内，
+                    # 任何路径（正常/异常/超时）都执行，保证用户开关意愿不被双击行为篡改。
+                    # 本次托盘 KeepAlive 不中断，下次登录不自启（标记只管开机自启）。
+                    if service._autostart_disabled():
+                        _sp.run(
+                            ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                            check=False,
+                            timeout=10,
+                        )
+                        try:
+                            if os.path.exists(plist):
+                                os.unlink(plist)
+                        except OSError:
+                            pass
                 if _la_ok:
                     print(
                         "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
