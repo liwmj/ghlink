@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghlink"
-version = "0.5.8"
+version = "0.5.9"
 description = "Self-healing connectivity for GitHub: monitors reachability, auto-resolves fresh IPs and updates hosts to restore access seamlessly. Zero third-party dependencies, cross-platform."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -47,8 +47,10 @@ ghlink = "src/ghlink"
 
 # v0.4.3（李工 8 bug 点④ macOS 真机验收发现）：assets 必须打进 wheel——
 # venv/pip 安装时 _icon_path() 需能命中图标（否则托盘回退纯色非 LOGO）
+# v0.5.9（赛博 01:31 清单③）：config.example.json 也打进 wheel——pip 安装后
+# _ensure_config() 模板候选能从包内找到（否则首次 enable 缺配置模板）
 [tool.setuptools.package-data]
-ghlink = ["assets/*.png", "assets/*.ico"]
+ghlink = ["assets/*.png", "assets/*.ico", "config.example.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
