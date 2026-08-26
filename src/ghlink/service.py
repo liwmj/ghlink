@@ -920,12 +920,27 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
         elif sys.platform == "darwin":
             # v0.2.17 ⑤：PID 文件优先（detach 后 pgrep -f 正则与命令行形态不一致）
             pid_file = _tray_pid_file()
+            # v0.5.5（顾笙 21:35 实测定案，李工 21:35 反馈问题依旧）：
+            # redirecting 标记只修了 ps 兜底路径，PID 文件优先路径没排除——
+            # 双击进程 A 异常被吞后继续前台渲染并抢先写 PID 文件，kickstart 拉起的
+            # B 读 PID 文件发现 A 存活 → 误判已有实例 → B 被杀 → A 屏幕外 = 无反应。
+            # 修复：PID 文件优先路径同样跳过 redirecting 中的双击进程。
+            redirect_pid2: Optional[int] = None
+            try:
+                _rd2 = os.path.join(os.path.expanduser("~"), ".ghlink", "redirecting.pid")
+                if os.path.exists(_rd2):
+                    with open(_rd2, encoding="utf-8") as _f2:
+                        redirect_pid2 = int(_f2.read().strip())
+            except (OSError, ValueError):
+                redirect_pid2 = None
             try:
                 if os.path.exists(pid_file):
                     with open(pid_file, encoding="utf-8") as f:
                         pid = int(f.read().strip())
+                    # v0.5.5：PID 文件指向重定向中的双击进程 → 不算已有实例（让 B 接管）
                     if pid > 0 and pid != exclude_pid and _pid_alive(pid):
-                        return True
+                        if not (redirect_pid2 and pid == redirect_pid2):
+                            return True
                     # v0.4.23（赛博根因 2026-08-26）：PID 文件残留但进程已死
                     # （crash 后锁没释放）→ 删残留文件，stale 锁自动释放
                     try:
@@ -937,7 +952,7 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                     os.unlink(pid_file)
                 except OSError:
                     pass
-            # v0.5.4（顾笙 20:58 实测定案，李工 20:58 操作复现：退出→双击无反应）：
+            # v0.5.5（顾笙 20:58 实测定案，李工 20:58 操作复现：退出→双击无反应）：
             # 双击进程（LaunchServices 会话）kickstart 拉起 LaunchAgent 实例后自身未退出，
             # 新实例做单实例检查时 ps 匹配到双击进程的 "-m ghlink.main tray" 命令行 →
             # 误判已有实例 → 新实例立即退出（job runs+1 但 state=not running）→
@@ -976,7 +991,7 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                     continue
                 if exclude_pid and _pid == exclude_pid:
                     continue
-                # v0.5.4：重定向中的双击进程不算已有实例（防互判自杀）
+                # v0.5.5：重定向中的双击进程不算已有实例（防互判自杀）
                 if redirect_pid and _pid == redirect_pid:
                     continue
                 return True
