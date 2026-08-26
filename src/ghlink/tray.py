@@ -690,7 +690,10 @@ def main() -> int:
                         ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.ghlink.tray"],
                         check=False, timeout=10,
                     )
-                    print("[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）", file=sys.stderr)
+                    print(
+                        "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
+                        file=sys.stderr,
+                    )
                     return 0
         except Exception:
             pass
