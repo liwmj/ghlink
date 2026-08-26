@@ -240,6 +240,7 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.exe
             artifacts/**/*.pkg
+            artifacts/**/*.dmg
             artifacts/**/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release

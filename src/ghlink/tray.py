@@ -664,6 +664,12 @@ def main() -> int:
                 service._enable_autostart()
         except Exception:
             pass
+        # v0.5.x（李工 14:36「装两个文件离谱」收敛）：手动安装 = 拖一个 dmg/app，
+        # 系统组件（软链 + sudoers + LaunchDaemon 模板）首启自动引导安装（一次性授权）。
+        try:
+            service._ensure_macos_system_components()
+        except Exception:
+            pass
 
     if not HAS_TRAY:  # pragma: no cover
         print(

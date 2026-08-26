@@ -1,19 +1,17 @@
 #!/bin/bash
-# ghlink macOS dmg 构建（v0.5.0：dmg+cask 混合方案）
+# ghlink macOS dmg 构建（v0.5.x：dmg+cask 混合方案，李工 14:36 收敛：只拖一个文件）
 #
-# 设计口径（0.5.0 李工 13:45 拍板 dmg 路线恢复，拂晓 13:59 定格）：
+# 设计口径（v0.5.0 李工 13:45 拍板 dmg，拂晓 13:59 定格；v0.5.x 李工 14:36 收敛）：
 #   D1 = dmg 管 app（拖入 /Applications 即用，无 postinstall/relocate/收据链）
-#   D2 = 系统组件（LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）走一次性小 pkg
+#   D2 = 系统组件（LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）app 首启自装
+#        （tray 启动检测缺失 → 弹管理员授权一次性安装，之后无感）
 #   D3 = LaunchAgent 托盘自启（app 首次启动自动注册，KeepAlive 保活）
-#   D4 = 割裂态防护（dmg 内 .app + 小 pkg + 安装引导）
+#   D4 = 割裂态防护（dmg 内 README 说明 + app 首启自动引导）
 #
-# 产物：dist/macos/ghlink-<VERSION>.dmg + ghlink-<VERSION>-system.pkg
-# 内容：
-#   - ghlink-<VERSION>.dmg：ghlink.app（双击启动托盘，LOGO 图标，内嵌 CLI）+ README（安装引导）
-#   - ghlink-<VERSION>-system.pkg：LaunchDaemon 模板 + sudoers + /usr/local/bin/ghlink 软链（一次性）
+# 产物：dist/macos/ghlink-<VERSION>.dmg（只含 ghlink.app + README）
 #
 # 用法: bash packaging/macos/build_dmg.sh
-# 依赖: hdiutil（macOS 自带）+ pkgbuild（小 pkg，macOS 自带）
+# 依赖: hdiutil（macOS 自带）
 
 set -e
 
@@ -30,7 +28,7 @@ echo "==> 清理旧构建"
 rm -rf "$STAGE" "$OUT"
 mkdir -p "$STAGE" "$OUT"
 
-echo "==> 组装 .app（复用 build_pkg.sh D2 结构：内嵌 CLI + 托盘 + vendor）"
+echo "==> 组装 .app（内嵌 CLI + 托盘 + vendor）"
 APP="$STAGE/$APP_NAME"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/libexec/ghlink" "$APP/Contents/libexec/assets" "$APP/Contents/libexec/vendor"
 cp "$ROOT"/src/ghlink/*.py "$APP/Contents/libexec/ghlink/"
@@ -70,7 +68,7 @@ find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO;
 done
 rm -rf "$WHEEL_DIR"
 
-# CLI 可执行（内嵌 .app；软链 /usr/local/bin/ghlink 指向此路径，sudoers 放行）
+# CLI 可执行（内嵌 .app；首启自装时软链 /usr/local/bin/ghlink 指向此路径）
 cat > "$APP/Contents/MacOS/ghlink" <<EOF
 #!/bin/bash
 SELF="\$0"
@@ -91,7 +89,7 @@ exec "/usr/local/bin/python3" -m ghlink.main "\$@"
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
 
-# 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路，v0.5.0）
+# 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路）
 cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
 #!/bin/bash
 SELF="\$0"
@@ -143,14 +141,14 @@ for sz in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ghlink-icon.icns"
 
-echo "==> 打包 dmg（拖入即用，无 postinstall/relocate/收据链）"
-# 应用安装引导页（割裂态防护 D4：提示装系统组件小 pkg）
+echo "==> 打包 dmg（只含 app，拖一个文件即用；系统组件 app 首启自装）"
+# 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
 cat > "$STAGE/安装说明.txt" <<'EOF'
-ghlink 安装说明（v0.5.0 dmg 版）
+ghlink 安装说明（v0.5.x dmg 版）
 1. 把 ghlink.app 拖入 Applications 文件夹
 2. 首次运行 ghlink.app（右键 → 打开，未签名首次需授权）
-3. 如需系统值守（自动切 IP 写 hosts），双击安装 ghlink-<VERSION>-system.pkg
-   （一次性；包含 LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）
+3. 托盘启动时若检测到系统组件未装（值守 daemon/sudoers/CLI 软链缺失），
+   会弹一次管理员授权自动安装（一次性），之后无感
 4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
 cp "$STAGE/安装说明.txt" "$STAGE/README.txt"
@@ -158,37 +156,9 @@ hdiutil create -volname "ghlink" -srcfolder "$STAGE/ghlink.app" -ov \
   -format UDZO "$STAGE/ghlink-${VERSION}.dmg" >/dev/null
 mv "$STAGE/ghlink-${VERSION}.dmg" "$OUT/"
 
-echo "==> 打包系统组件小 pkg（LaunchDaemon + sudoers + CLI 软链，一次性）"
-mkdir -p "$STAGE/system-root/usr/local/bin" "$STAGE/system-root/Library/LaunchDaemons" "$STAGE/system-root/usr/local/etc/ghlink"
-ln -s "/Applications/ghlink.app/Contents/MacOS/ghlink" "$STAGE/system-root/usr/local/bin/ghlink"
-cp "$ROOT/config.example.json" "$STAGE/system-root/usr/local/etc/ghlink/config.json"
-# LaunchDaemon 模板（enable 时由 ghlink 正式注册；此处落位模板，兼容 pkg 升级）
-cat > "$STAGE/system-root/Library/LaunchDaemons/com.ghlink.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>com.ghlink.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/ghlink</string>
-        <string>/etc/ghlink/config.json</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PYTHONPATH</key><string>/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor</string>
-    </dict>
-    <key>StartInterval</key><integer>3600</integer>
-    <key>RunAtLoad</key><true/>
-    <key>StandardOutPath</key><string>/var/log/ghlink.log</string>
-    <key>StandardErrorPath</key><string>/var/log/ghlink.log</string>
-</dict>
-</plist>
-PLIST
-pkgbuild --root "$STAGE/system-root" \
-  --identifier com.ghlink.system \
-  --version "$VERSION" \
-  "$OUT/ghlink-${VERSION}-system.pkg"
+# v0.5.x（李工 14:36「装两个文件离谱」）：不再单独打 system.pkg——
+# 系统组件（LaunchDaemon + sudoers + CLI 软链）改 app 首启自装（tray 启动检测
+# 缺失 → 弹管理员授权一次性安装），dmg 只含 app，手动安装 = 拖一个文件。
 
 echo "==> 完成:"
 ls -la "$OUT/"
