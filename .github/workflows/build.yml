@@ -174,6 +174,7 @@ jobs:
           python-version: "3.14"
       - name: Build dmg + system pkg (Cask dmg 方案, v0.5.0)
         run: |
+          pip install ds-store
           bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 供 Cask 同步使用
           DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
@@ -241,12 +242,12 @@ jobs:
             artifacts/dist-python/*.whl
             artifacts/dist-python/*.tar.gz
             artifacts/dist-windows/*.exe
-            artifacts/dist-macos/*.dmg
+            artifacts/dist-macos-dmg/*.dmg
             artifacts/dist-macos/*.pkg
             artifacts/dist-linux/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
-          fail_on_unmatched: false
+          fail_on_unmatched_files: false
           generate_release_notes: true
 
   deploy-pages:
