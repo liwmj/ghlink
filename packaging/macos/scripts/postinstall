@@ -40,7 +40,11 @@ if [ -d "$APP" ] && [ -x "/System/Library/Frameworks/CoreServices.framework/Fram
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f "$APP" || true
 fi
 
-# CLI wrapper 权限
+# CLI wrapper 权限 + v0.4.27（李工 13:33 实测：启动值守提示权限不足）
+# 刀⑦：修复式归位（ditto 复制）后 /usr/local/bin/ghlink 软链可能失效——
+# ditto 重建 .app 但软链指向旧 inode，sudoers NOPASSWD 放行路径不匹配 → 提权失败。
+# 归位后强制重建软链 + 校验 sudoers 存在且路径匹配。
+ln -sfn "$APP/Contents/MacOS/ghlink" /usr/local/bin/ghlink 2>/dev/null || true
 chmod 0755 /usr/local/bin/ghlink 2>/dev/null || true
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray" 2>/dev/null || true
 

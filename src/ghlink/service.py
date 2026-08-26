@@ -649,12 +649,20 @@ def _enable_autostart() -> bool:
             # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
             exe = _find_wrapper() or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
+                # v0.4.27（李工 13:33 实测：退出托盘后二次打开 APP 托盘不回来）：
+                # 原 plist 仅 RunAtLoad（登录拉一次），进程退出后 launchctl 不重启。
+                # 加 KeepAlive {SuccessfulExit: false}：崩溃/被杀自动拉起，
+                # 用户显式退出（正常 exit 0）不拉起，语义不冲突。
                 f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>com.ghlink.tray</string>
   <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
   <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
 </dict></plist>
 """)
             import subprocess as _sp
