@@ -21,6 +21,31 @@ from . import hosts_manager, platform_adapter, state
 from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
 
 
+def _wrapper_candidates() -> tuple:
+    """ghlink wrapper 候选路径（含 .app 绝对路径，GUI/launchd PATH 受限场景兜底）。
+
+    v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 应用（Finder/LaunchServices 双击）
+    PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，且 relocate 事故后 /usr/local/bin/ghlink
+    软链会断——候选列表必须含 .app 内绝对路径，且三处（_python_cmd/_find_wrapper/
+    _macos_daemon_command）共用，防 SonarCloud 重复率超标。
+    """
+    return (
+        "/Applications/ghlink.app/Contents/MacOS/ghlink",
+        "/usr/local/bin/ghlink",
+        "/opt/homebrew/bin/ghlink",
+        "/usr/bin/ghlink",
+    )
+
+
+def _find_wrapper() -> Optional[str]:
+    """返回第一个存在的 wrapper 绝对路径；无则 None（调用方回退）。"""
+    for cand in _wrapper_candidates():
+        if os.path.exists(cand):
+            return cand
+    w = shutil.which("ghlink")
+    return w if w else None
+
+
 def _python_cmd() -> str:
     """值守执行入口：优先 wrapper（带 PYTHONPATH），回退裸 python -m。
 
@@ -35,10 +60,10 @@ def _python_cmd() -> str:
         watch = os.path.join(exe_dir, "ghlink-watch.exe")
         if os.path.exists(watch):
             return f'"{watch}"'
-    # 优先 PATH 里的 wrapper（brew/deb 安装均落 bin）
-    for cand in (shutil.which("ghlink"), "/usr/local/bin/ghlink", "/usr/bin/ghlink"):
-        if cand and os.path.exists(cand):
-            return f'"{cand}"'
+    # 优先 wrapper（含 .app 绝对路径，GUI/launchd PATH 受限场景兜底）
+    w = _find_wrapper()
+    if w:
+        return f'"{w}"'
     # 开发模式回退：裸 python -m（源码/venv 环境 PYTHONPATH 天然可用）
     py = sys.executable or "python3"
     return f'"{py}" -m ghlink.main'
@@ -365,13 +390,8 @@ def _uninstall_self_elevate() -> Optional[int]:
 
     # v0.4.15（验收发现）：brew 子进程 PATH 下 which 失败、python -m 使 argv[0]
     # 变成 main.py 路径——均不匹配 sudoers NOPASSWD → 确定性候选列表找 wrapper
-    exe = shutil.which("ghlink")
-    for _cand in (exe, "/usr/local/bin/ghlink", "/opt/homebrew/bin/ghlink"):
-        if _cand and os.path.exists(_cand):
-            exe = _cand
-            break
-    else:
-        exe = None
+    # v0.4.25：统一走 _find_wrapper()（含 .app 绝对路径，GUI/launchd PATH 受限兜底）
+    exe = _find_wrapper()
     # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
     # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
     if not exe or not os.path.exists(exe):
@@ -610,19 +630,8 @@ def _enable_autostart() -> bool:
             # v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 环境 PATH 无 /usr/local/bin，
             # shutil.which("ghlink") 可能找不到 → 回退 sys.executable 裸 python →
             # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
-            # 改为绝对路径优先：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）→
-            # /usr/local/bin → /opt/homebrew/bin → which → sys.executable 兜底。
-            exe = None
-            for cand in (
-                "/Applications/ghlink.app/Contents/MacOS/ghlink",
-                "/usr/local/bin/ghlink",
-                "/opt/homebrew/bin/ghlink",
-            ):
-                if os.path.exists(cand):
-                    exe = cand
-                    break
-            if not exe:
-                exe = shutil.which("ghlink") or sys.executable
+            # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
+            exe = _find_wrapper() or sys.executable
             with open(plist, "w", encoding="utf-8") as f:
                 f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1031,13 +1040,9 @@ def _macos_daemon_command() -> str:
     PATH 补全（v0.4.23），即使软链断了也能跑。
     """
     if sys.platform == "darwin":
-        for cand in (
-            "/Applications/ghlink.app/Contents/MacOS/ghlink",
-            "/usr/local/bin/ghlink",
-            "/opt/homebrew/bin/ghlink",
-        ):
-            if os.path.exists(cand):
-                return cand
+        w = _find_wrapper()
+        if w:
+            return w
     # 非 macOS / 异常环境：走原 _python_cmd()（Windows frozen / dev 回退）
     return _python_cmd().strip(chr(34))
 
