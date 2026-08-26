@@ -678,17 +678,25 @@ def main() -> int:
         try:
             if service._is_autostart():
                 import subprocess as _sp
+
                 la_pid = service._launchagent_pid()
                 if la_pid != os.getpid():
                     plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
                     if la_pid is None:
                         _sp.run(
                             ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
-                            check=False, timeout=10,
+                            check=False,
+                            timeout=10,
                         )
                     _sp.run(
-                        ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.ghlink.tray"],
-                        check=False, timeout=10,
+                        [
+                            "launchctl",
+                            "kickstart",
+                            "-k",
+                            f"gui/{os.getuid()}/com.ghlink.tray",
+                        ],
+                        check=False,
+                        timeout=10,
                     )
                     print(
                         "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
