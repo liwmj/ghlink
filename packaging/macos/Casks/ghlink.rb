@@ -32,7 +32,7 @@ cask "ghlink" do
              executable: "/bin/bash",
              args:       ["-c",
                           "if [ -x /opt/homebrew/bin/ghlink ]; then /opt/homebrew/bin/ghlink uninstall; "                           "elif [ -x /usr/local/bin/ghlink ]; then /usr/local/bin/ghlink uninstall; fi"],
-             sudo:       false,
+             sudo:       true,
            }
 
   # zap：彻底清理残留（brew uninstall --zap ghlink 时执行，二次兜底）
