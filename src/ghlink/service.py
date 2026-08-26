@@ -38,12 +38,22 @@ def _wrapper_candidates() -> tuple:
 
 
 def _find_wrapper() -> Optional[str]:
-    """返回第一个存在的 wrapper 绝对路径；无则 None（调用方回退）。"""
+    """返回第一个存在的 wrapper 绝对路径；无则 which 兜底。
+
+    darwin：.app 内绝对路径优先（GUI/launchd PATH 受限 + relocate 软链断场景，
+    v0.4.25 赛博根因）；其他平台：which 优先（保持 v0.2.17 原语义）。
+    """
+    if sys.platform == "darwin":
+        for cand in _wrapper_candidates():
+            if os.path.exists(cand):
+                return cand
+    w = shutil.which("ghlink")
+    if w:
+        return w
     for cand in _wrapper_candidates():
         if os.path.exists(cand):
             return cand
-    w = shutil.which("ghlink")
-    return w if w else None
+    return None
 
 
 def _python_cmd() -> str:
@@ -622,8 +632,6 @@ def _enable_autostart() -> bool:
                 winreg.SetValueEx(key, "ghlink-tray", 0, winreg.REG_SZ, f'"{exe}"')
             return True
         elif sys.platform == "darwin":
-            import shutil
-
             plist_dir = os.path.expanduser("~/Library/LaunchAgents")
             os.makedirs(plist_dir, exist_ok=True)
             plist = os.path.join(plist_dir, "com.ghlink.tray.plist")

@@ -154,16 +154,33 @@ class TestEntryCmd:
     """值守执行入口（2026-08-17 Bug A 修复：优先 wrapper 带 PYTHONPATH）。"""
 
     def test_prefer_wrapper(self, monkeypatch):
-        """PATH 里有 wrapper → 用 wrapper（带 PYTHONPATH），不裸调 python -m。"""
+        """PATH 里有 wrapper → 用 wrapper（带 PYTHONPATH），不裸调 python -m。
+
+        v0.4.25：darwin 下 .app 绝对路径优先（GUI/launchd PATH 受限 + relocate
+        软链断场景），回退 which/usr/local/bin。mock .app 不存在验证回退链。
+        """
         monkeypatch.setattr(service.sys, "platform", "darwin")
-        monkeypatch.setattr(service.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(
+            service.os.path,
+            "exists",
+            lambda p: p != "/Applications/ghlink.app/Contents/MacOS/ghlink",
+        )
         monkeypatch.setattr(service.shutil, "which", lambda name: "/usr/local/bin/ghlink")
         cmd = service._python_cmd()
         assert "/usr/local/bin/ghlink" in cmd
         assert "-m ghlink.main" not in cmd
 
+    def test_prefer_app_wrapper_darwin(self, monkeypatch):
+        """v0.4.25（赛博根因 2026-08-26）：darwin 下 .app 内绝对路径 wrapper 优先——
+        relocate 事故后 /usr/local/bin/ghlink 软链断，只能靠 .app 路径兜底。"""
+        monkeypatch.setattr(service.sys, "platform", "darwin")
+        monkeypatch.setattr(service.os.path, "exists", lambda p: True)
+        cmd = service._python_cmd()
+        assert "/Applications/ghlink.app/Contents/MacOS/ghlink" in cmd
+        assert "-m ghlink.main" not in cmd
+
     def test_prefer_wrapper_linux(self, monkeypatch):
-        """Linux deb 安装：/usr/bin/ghlink wrapper 优先。"""
+        """Linux deb 安装：/usr/bin/ghlink wrapper 优先（which 语义保持）。"""
         monkeypatch.setattr(service.sys, "platform", "linux")
         monkeypatch.setattr(service.os.path, "exists", lambda p: True)
         monkeypatch.setattr(service.shutil, "which", lambda name: "/usr/bin/ghlink")
