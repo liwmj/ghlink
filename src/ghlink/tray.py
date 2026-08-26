@@ -259,13 +259,17 @@ def _cli_command(subcmd: str) -> list:
     # /usr/bin:/bin:/usr/sbin:/sbin，shutil.which 找不到 /usr/local/bin/ghlink → 退回
     # python -m 不匹配 sudoers NOPASSWD → 提权失败（与 08-25 卸载弹密码同病根）。
     # v0.4.25：统一复用 service._find_wrapper()（含 .app 绝对路径，SonarCloud 消重）。
+    # ⚠️ v0.4.27 回归修复（李工 13:40 实测：值守关不掉/权限不足）：_find_wrapper()
+    # 优先 .app 内 wrapper（/Applications/ghlink.app/...），但 sudoers NOPASSWD 放行
+    # 的是 /usr/local/bin/ghlink——提权走 .app 路径不匹配白名单 → sudo 要密码 →
+    # 权限不足。提权命令必须与 sudoers 放行路径对齐（/usr/local/bin 优先），
+    # .app wrapper 只用于 LaunchAgent 启动（_enable_autostart），两职责分离。
     import shutil as _shutil
 
-    w = service._find_wrapper()
-    if w:
-        return [w, subcmd]
-    # venv/Scripts 场景（非 .app/brew 安装位）
+    # 提权路径（sudoers NOPASSWD 放行）优先：/usr/local/bin → /opt/homebrew/bin
     for cand in (
+        "/usr/local/bin/ghlink",  # Intel macOS 安装位（sudoers 放行路径）
+        "/opt/homebrew/bin/ghlink",  # Apple Silicon macOS 安装位
         os.path.join(os.path.dirname(sys.executable), "ghlink"),  # venv/bin/ghlink
         os.path.join(os.path.dirname(sys.executable), "ghlink.exe"),  # Windows Scripts
     ):
