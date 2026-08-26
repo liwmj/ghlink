@@ -663,6 +663,7 @@ def _enable_autostart() -> bool:
   <dict>
     <key>SuccessfulExit</key><false/>
   </dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
 </dict></plist>
 """)
             import subprocess as _sp
