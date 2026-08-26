@@ -1042,7 +1042,8 @@ def _ensure_macos_system_components() -> bool:
     script = (
         f"ln -sfn '{app}' {_GHLINK_BIN}; "
         f"mkdir -p /etc/ghlink /usr/local/etc/ghlink; "
-        f"cp -n '{_GHLINK_APP_LIBEXEC}/config.json' /usr/local/etc/ghlink/config.json 2>/dev/null || true; "
+        f"cp -n '{_GHLINK_APP_LIBEXEC}/config.json' "
+        f"/usr/local/etc/ghlink/config.json 2>/dev/null || true; "
         f"cat > {sudoers_d} <<'EOS'\n"
         f"# ghlink 托盘提权窄放行（app 首启自动写入）\n"
         f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
