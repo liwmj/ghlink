@@ -494,6 +494,12 @@ def uninstall() -> int:
         print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
     else:
         print("[ghlink] 警告：hosts 段落移除失败（权限？），请手动检查", file=sys.stderr)
+    # v0.5.11（拂晓 02:38 预检 ④ 顺序 bug 实锤，赛博 02:43 核实）：uninstall 先删配置目录
+    # （ghlink.lock 随之被删）再调 _kill_ghlink_residual_procs() → 读 lock 拿 PID 时文件
+    # 已没了 → 跳过 kill → 异步首轮进程残留。kill 必须前置：删目录前 lock 还在，
+    # 读 PID 精确杀；_cleanup_uninstall_residue() 内保留原调用做幂等双保险（此时 lock
+    # 已删自然跳过，无副作用）。
+    _kill_ghlink_residual_procs()
     # 删除配置目录（当前平台生效的配置/状态/缓存）
     cfg_path = _config_path()
     cfg_dir = os.path.dirname(os.path.abspath(cfg_path)) if cfg_path else ""
