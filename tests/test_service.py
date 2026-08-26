@@ -99,7 +99,10 @@ class TestTrayAlive:
         monkeypatch.setattr(
             service.platform_adapter,
             "_run_cmd_output",
-            lambda args: "99999 /usr/bin/python3 -m ghlink.main tray\n12345 /usr/bin/python3 -m ghlink.main tray\n",  # 99999=自身, 12345=旧实例
+            lambda args: (
+                "99999 /usr/bin/python3 -m ghlink.main tray\n"
+                "12345 /usr/bin/python3 -m ghlink.main tray\n"
+            ),  # 99999=自身, 12345=旧实例
         )
         assert service._tray_alive(exclude_pid=99999) is True
 
