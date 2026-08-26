@@ -141,20 +141,29 @@ for sz in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ghlink-icon.icns"
 
-echo "==> 打包 dmg（只含 app，拖一个文件即用；系统组件 app 首启自装）"
+echo "==> 打包 dmg（app + Applications 快捷方式，拖一个文件即用；系统组件 app 首启自装）"
+# 标准 dmg 布局：ghlink.app + Applications 软链（用户直接拖上去）+ 安装说明
+DMG_CONTENT="$STAGE/dmg-content"
+mkdir -p "$DMG_CONTENT"
+cp -R "$APP" "$DMG_CONTENT/"
+ln -s /Applications "$DMG_CONTENT/Applications"
 # 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
-cat > "$STAGE/安装说明.txt" <<'EOF'
+cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
 ghlink 安装说明（v0.5.x dmg 版）
-1. 把 ghlink.app 拖入 Applications 文件夹
+1. 把 ghlink.app 拖到 Applications 文件夹（或直接拖到左侧 Applications 快捷方式）
 2. 首次运行 ghlink.app（右键 → 打开，未签名首次需授权）
 3. 托盘启动时若检测到系统组件未装（值守 daemon/sudoers/CLI 软链缺失），
    会弹一次管理员授权自动安装（一次性），之后无感
 4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
-cp "$STAGE/安装说明.txt" "$STAGE/README.txt"
-hdiutil create -volname "ghlink" -srcfolder "$STAGE/ghlink.app" -ov \
-  -format UDZO "$STAGE/ghlink-${VERSION}.dmg" >/dev/null
-mv "$STAGE/ghlink-${VERSION}.dmg" "$OUT/"
+
+# Finder 窗口布局：.DS_Store 大图标（李工 16:50 反馈「DMG包里的图标大一点”）——
+# 用 ds-store 库直接生成，不依赖 Finder/TCC 授权（osascript 方式 CI 上不可用）
+echo "==> 生成 Finder 布局 .DS_Store（大图标）"
+python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+
+hdiutil create -volname "ghlink" -srcfolder "$DMG_CONTENT" -ov \
+  -format UDZO "$OUT/ghlink-${VERSION}.dmg" >/dev/null
 
 # v0.5.x（李工 14:36「装两个文件离谱」）：不再单独打 system.pkg——
 # 系统组件（LaunchDaemon + sudoers + CLI 软链）改 app 首启自装（tray 启动检测

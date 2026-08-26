@@ -233,17 +233,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2.2.1
         with:
+          # v0.5.2（五刀⑤）：files 去重——v0.5.0/v0.5.1 曾因 glob 重复匹配 + release 刚创建
+          # 不可发现导致 asset 元数据更新 404（Not Found）卡 draft。升级 v2.2.1（修复竞态）+ 精确匹配。
           files: |
-            artifacts/**/*.whl
-            artifacts/**/*.tar.gz
-            artifacts/**/*.exe
-            artifacts/**/*.pkg
-            artifacts/**/*.dmg
-            artifacts/**/*.deb
+            artifacts/dist-python/*.whl
+            artifacts/dist-python/*.tar.gz
+            artifacts/dist-windows/*.exe
+            artifacts/dist-macos/*.dmg
+            artifacts/dist-macos/*.pkg
+            artifacts/dist-linux/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
+          fail_on_unmatched: false
           generate_release_notes: true
 
   deploy-pages:

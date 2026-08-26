@@ -7,7 +7,9 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.22"
+# v0.5.2（拂晓 16:50 五刀④）：版本号动态化——CI 取 GITHUB_REF_NAME（tag），本地取最近 git tag，可被 VERSION 覆盖
+VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 

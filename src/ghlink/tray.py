@@ -660,7 +660,8 @@ def main() -> int:
     # 启动时若未注册则自动注册（幂等），保证「双击 APP 启动过 → 下次登录自启」。
     if sys.platform == "darwin":
         try:
-            if not service._is_autostart():
+            # v0.5.2（拂晓 16:50 五刀②）：用户显式取消过自启 → 不再自动注册（意愿持久化标记）
+            if not service._is_autostart() and not service._autostart_disabled():
                 service._enable_autostart()
         except Exception:
             pass
@@ -668,6 +669,40 @@ def main() -> int:
         # 系统组件（软链 + sudoers + LaunchDaemon 模板）首启自动引导安装（一次性授权）。
         try:
             service._ensure_macos_system_components()
+        except Exception:
+            pass
+        # v0.5.2 刀①（李工 16:34 实测：双击 APP 托盘不显示 / 图标落屏幕外 -1,1108）：
+        # LaunchServices 双击链路图标落屏幕外；LaunchAgent 脚本路径渲染正常 (940,3)。
+        # 双击启动时：若 LaunchAgent 已注册且当前进程非其拉起 → kickstart -k 强制走
+        # 脚本路径渲染（顺带杀掉屏幕外旧实例/接管残留锁），本进程退出让位。
+        try:
+            if service._is_autostart():
+                import subprocess as _sp
+
+                la_pid = service._launchagent_pid()
+                if la_pid != os.getpid():
+                    plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+                    if la_pid is None:
+                        _sp.run(
+                            ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                            check=False,
+                            timeout=10,
+                        )
+                    _sp.run(
+                        [
+                            "launchctl",
+                            "kickstart",
+                            "-k",
+                            f"gui/{os.getuid()}/com.ghlink.tray",
+                        ],
+                        check=False,
+                        timeout=10,
+                    )
+                    print(
+                        "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
+                        file=sys.stderr,
+                    )
+                    return 0
         except Exception:
             pass
 
