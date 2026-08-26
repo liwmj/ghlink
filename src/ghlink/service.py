@@ -502,6 +502,27 @@ def _cleanup_uninstall_residue() -> None:
         if os.path.isdir(d):
             _sh.rmtree(d, ignore_errors=True)
             print(f"[ghlink] 已清理残留目录: {d}")
+    # v0.5.3（李工 18:45/19:03/19:44 三次强调「卸载必须干净」）：macOS 托盘 LaunchAgent
+    # 全套自清——plist + bootout + disable 状态反写 enable（disable 残留会挡重装后自启）
+    if sys.platform == "darwin":
+        import subprocess as _sp
+
+        # uninstall 以 root 跑时 os.getuid()=0，用 SUDO_UID 还原真实用户 uid
+        try:
+            _uid = int(os.environ.get("SUDO_UID") or os.getuid())
+        except (TypeError, ValueError):
+            _uid = os.getuid()
+        _label = f"gui/{_uid}/com.ghlink.tray"
+        _sp.run(["launchctl", "bootout", _label], check=False, timeout=10)
+        # 反写 disable（enable 幂等；不残留禁用状态，重装后自启/注册不受挡）
+        _sp.run(["launchctl", "enable", _label], check=False, timeout=10)
+        _la_plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+        if os.path.exists(_la_plist):
+            try:
+                os.unlink(_la_plist)
+                print(f"[ghlink] 已清理 LaunchAgent: {_la_plist}")
+            except OSError as _exc:
+                print(f"[ghlink] 警告：清理 {_la_plist} 失败: {_exc}", file=sys.stderr)
 
 
 def status() -> int:
@@ -624,6 +645,43 @@ def _is_autostart() -> bool:
         return False
 
 
+def _write_tray_plist() -> Optional[str]:
+    """写 LaunchAgent plist 文件（v0.5.3 抽取，双击兜底与 _enable_autostart 共用）。
+
+    返回 plist 路径；失败返回 None。只写文件，不 load / 不清标记。
+    """
+    try:
+        plist_dir = os.path.expanduser("~/Library/LaunchAgents")
+        os.makedirs(plist_dir, exist_ok=True)
+        plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
+        # v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 环境 PATH 无 /usr/local/bin，
+        # shutil.which("ghlink") 可能找不到 → 回退 sys.executable 裸 python →
+        # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
+        # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
+        exe = _find_wrapper() or sys.executable
+        with open(plist, "w", encoding="utf-8") as f:
+            # v0.4.27（李工 13:33 实测：退出托盘后二次打开 APP 托盘不回来）：
+            # 原 plist 仅 RunAtLoad（登录拉一次），进程退出后 launchctl 不重启。
+            # 加 KeepAlive {SuccessfulExit: false}：崩溃/被杀自动拉起，
+            # 用户显式退出（正常 exit 0）不拉起，语义不冲突。
+            f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ghlink.tray</string>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict></plist>
+""")
+        return plist
+    except Exception:
+        return None
+
+
 def _enable_autostart() -> bool:
     """注册开机自启动（托盘随登录启动）。用户级，无需提权。"""
     try:
@@ -640,14 +698,6 @@ def _enable_autostart() -> bool:
                 winreg.SetValueEx(key, "ghlink-tray", 0, winreg.REG_SZ, f'"{exe}"')
             return True
         elif sys.platform == "darwin":
-            plist_dir = os.path.expanduser("~/Library/LaunchAgents")
-            os.makedirs(plist_dir, exist_ok=True)
-            plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
-            # v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 环境 PATH 无 /usr/local/bin，
-            # shutil.which("ghlink") 可能找不到 → 回退 sys.executable 裸 python →
-            # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
-            # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
-            exe = _find_wrapper() or sys.executable
             # v0.5.2（拂晓 16:50 五刀②）：重新开启自启时清除用户取消意愿标记
             try:
                 _marker = os.path.expanduser("~/.ghlink/autostart-disabled")
@@ -655,24 +705,9 @@ def _enable_autostart() -> bool:
                     os.remove(_marker)
             except Exception:
                 pass
-            with open(plist, "w", encoding="utf-8") as f:
-                # v0.4.27（李工 13:33 实测：退出托盘后二次打开 APP 托盘不回来）：
-                # 原 plist 仅 RunAtLoad（登录拉一次），进程退出后 launchctl 不重启。
-                # 加 KeepAlive {SuccessfulExit: false}：崩溃/被杀自动拉起，
-                # 用户显式退出（正常 exit 0）不拉起，语义不冲突。
-                f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.ghlink.tray</string>
-  <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key><false/>
-  </dict>
-  <key>LimitLoadToSessionType</key><string>Aqua</string>
-</dict></plist>
-""")
+            plist = _write_tray_plist()
+            if not plist:
+                return False
             import subprocess as _sp
 
             # 赛博 09:56 问题 A：plist 照写（自启动注册必须成功），
@@ -903,11 +938,31 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
                 except OSError:
                     pass
             # 兜底：pgrep（PID 文件缺失/损坏时）
-            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink\\.main tray"])
-            pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
-            if exclude_pid:
-                pids = [p for p in pids if p != exclude_pid]
-            return bool(pids)
+            # v0.5.3（顾笙 19:12 实测定案）：pgrep -f "ghlink\\.main tray" 会自匹配——
+            # 诊断命令/exec 命令行含该字符串的进程也被匹配 → 误判已有实例 → 新实例启动即退。
+            # 修复：锚定 -m ghlink.main tray 形态（脚本路径拉起）+ 排除自身 + 排除 ppid=1 外的
+            # 非托盘进程；用 ps 精确匹配命令行结尾，避免宽泛子串。
+            out = platform_adapter._run_cmd_output(["ps", "ax", "-o", "pid=,command="])
+            for _line in (out or "").splitlines():
+                _line = _line.strip()
+                if not _line:
+                    continue
+                _pid_s, _cmd = _line.split(None, 1)
+                if "ghlink.main tray" not in _cmd:
+                    continue
+                # 只认 python -m ghlink.main tray 形态（/…/Python -m ghlink.main tray）
+                if not _cmd.rstrip().endswith("-m ghlink.main tray") and not _cmd.rstrip().endswith(
+                    "ghlink.main tray"
+                ):
+                    continue
+                try:
+                    _pid = int(_pid_s)
+                except ValueError:
+                    continue
+                if exclude_pid and _pid == exclude_pid:
+                    continue
+                return True
+            return False
         return False
     except Exception:
         return False
