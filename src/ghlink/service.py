@@ -992,7 +992,7 @@ def _ensure_sudoers_macos() -> None:
         content = (
             "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
             f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
-            f"Defaults!{_GHLINK_BIN} env_keep += \"GH_TOKEN\"\n"
+            f'Defaults!{_GHLINK_BIN} env_keep += "GH_TOKEN"\n'
             f"Defaults!{_GHLINK_BIN} env_keep += "
             '"HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
         )
