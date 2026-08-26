@@ -11,14 +11,32 @@ set -e
 
 # v0.4.25（赛博根因 2026-08-26，顾笙实测）：pkg 未签名 → 安装器 relocate 行为——
 # /Applications 已有旧版时，新 app 被装到 ~/ghlink-test.app 而非 /Applications
-# → 软链断、Launchpad 找不到、双击无反应。安装后必须校验落位 + 注册 LaunchServices。
+# → 软链断、Launchpad 找不到、双击无反应。
+# ⚠️ v0.4.25 安装失败根因（拂晓 12:44 命中，赛博确认）：原实现校验 app 不在
+# /Applications 直接 exit 1 —— 但 relocate 场景下 app 必然不在 /Applications，
+# postinstall 退出码非 0 → 安装器整体判定「安装失败」。改为**修复式落位**：
+# 先尝试从 relocate 位置 ditto 归位，仍失败才 warning（绝不 exit 1）。
 APP="/Applications/ghlink.app"
 if [ ! -d "$APP" ]; then
-  echo "ERROR: ghlink.app 未落位 /Applications（可能被安装器 relocate），安装异常，请重装" >&2
-  exit 1
+  # 从安装器 relocate 位置找回（实测路径 ~/ghlink-test.app，console 用户目录）
+  FOUND=""
+  for cand in /Users/*/ghlink-test.app "$HOME/ghlink-test.app"; do
+    if [ -d "$cand" ]; then
+      FOUND="$cand"
+      break
+    fi
+  done
+  if [ -n "$FOUND" ] && command -v ditto >/dev/null 2>&1; then
+    echo "[ghlink] 检测到安装器 relocate，从 $FOUND 归位到 /Applications"
+    ditto "$FOUND" "$APP" && echo "[ghlink] 归位完成: $APP"
+  fi
+fi
+if [ ! -d "$APP" ]; then
+  # 落位失败仅警告，不阻断安装（postinstall 非 0 会让整个安装失败）
+  echo "WARN: ghlink.app 未落位 /Applications，请安装后手动检查" >&2
 fi
 # LaunchServices 注册（双击/Launchpad 启动链路必需；ditto 复制场景未注册）
-if [ -x "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" ]; then
+if [ -d "$APP" ] && [ -x "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" ]; then
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f "$APP" || true
 fi
 
