@@ -156,9 +156,14 @@ ghlink 安装说明（v0.5.x dmg 版）
    会弹一次管理员授权自动安装（一次性），之后无感
 4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
+
+# Finder 窗口布局：.DS_Store 大图标（李工 16:50 反馈「DMG包里的图标大一点”）——
+# 用 ds-store 库直接生成，不依赖 Finder/TCC 授权（osascript 方式 CI 上不可用）
+echo "==> 生成 Finder 布局 .DS_Store（大图标）"
+python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+
 hdiutil create -volname "ghlink" -srcfolder "$DMG_CONTENT" -ov \
-  -format UDZO "$STAGE/ghlink-${VERSION}.dmg" >/dev/null
-mv "$STAGE/ghlink-${VERSION}.dmg" "$OUT/"
+  -format UDZO "$OUT/ghlink-${VERSION}.dmg" >/dev/null
 
 # v0.5.x（李工 14:36「装两个文件离谱」）：不再单独打 system.pkg——
 # 系统组件（LaunchDaemon + sudoers + CLI 软链）改 app 首启自装（tray 启动检测
