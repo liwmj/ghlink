@@ -588,6 +588,11 @@ def _kill_ghlink_residual_procs() -> None:
                     print(f"[ghlink] 警告：终止 PID {pid} 失败: {exc}", file=sys.stderr)
         except (OSError, ValueError, IndexError):
             continue
+        # v0.5.12（拂晓 03:40 预检实锤）：托盘清理段仅 macOS（launchctl 命令），
+        # Linux/Windows 无此命令——无 darwin 守卫时 uninstall 直接 FileNotFoundError 崩溃
+        # （0.5.11 kill 前置后 lock 还在 → 走到 launchctl → Linux 崩 + 非零退出 + 残留）。
+        if sys.platform != "darwin":
+            continue
         import subprocess as _sp
 
         # uninstall 以 root 跑时 os.getuid()=0，用 SUDO_UID 还原真实用户 uid
@@ -599,7 +604,12 @@ def _kill_ghlink_residual_procs() -> None:
         _sp.run(["launchctl", "bootout", _label], check=False, timeout=10)
         # 反写 disable（enable 幂等；不残留禁用状态，重装后自启/注册不受挡）
         _sp.run(["launchctl", "enable", _label], check=False, timeout=10)
-        _la_plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+        # v0.5.12：root 跑 uninstall 时 expanduser(~)=/var/root，用 SUDO_USER 还原真实用户 home
+        _home = os.path.expanduser("~")
+        _sudo_user = os.environ.get("SUDO_USER")
+        if _sudo_user:
+            _home = os.path.expanduser(f"~{_sudo_user}")
+        _la_plist = os.path.join(_home, "Library", "LaunchAgents", "com.ghlink.tray.plist")
         if os.path.exists(_la_plist):
             try:
                 os.unlink(_la_plist)
