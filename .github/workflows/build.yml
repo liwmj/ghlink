@@ -163,7 +163,7 @@ jobs:
           ghlink status
 
   build-macos-pkg:
-    name: macOS pkg (Cask, v0.4.13)
+    name: macOS dmg + system pkg (Cask, v0.5.0)
     runs-on: macos-latest
     needs: [build-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
@@ -172,12 +172,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: Build pkg (Cask .app + CLI symlink)
+      - name: Build dmg + system pkg (Cask dmg 方案, v0.5.0)
         run: |
-          bash packaging/macos/build_pkg.sh
-          # 输出 pkg sha256 供 Cask 同步使用
-          PKG_FILE="$(ls dist/macos/ghlink-*.pkg | head -1)"
-          echo "PKG_SHA256=$(shasum -a 256 "$PKG_FILE" | awk '{print $1}')" >> "$GITHUB_ENV"
+          bash packaging/macos/build_dmg.sh
+          # 输出 dmg sha256 供 Cask 同步使用
+          DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
+          echo "DMG_SHA256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Sync Cask to tap (homebrew-tap)
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -187,8 +187,8 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          # 替换 Cask 中的 sha256 占位符为真实 pkg sha256 + version 随 tag 动态化（macOS BSD sed 需 -i ''）
-          sed -i '' "s/REPLACE_WITH_PKG_SHA256/${PKG_SHA256}/" packaging/macos/Casks/ghlink.rb
+          # 替换 Cask 中的 sha256 占位符为真实 dmg sha256 + version 随 tag 动态化（macOS BSD sed 需 -i ''）
+          sed -i '' "s/REPLACE_WITH_DMG_SHA256/${DMG_SHA256}/" packaging/macos/Casks/ghlink.rb
           sed -i '' "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
@@ -201,10 +201,10 @@ jobs:
           else
             echo "cask 无变化，跳过"
           fi
-      - name: Upload pkg artifact
+      - name: Upload dmg artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-macos-pkg
+          name: dist-macos-dmg
           path: dist/macos/
 
   macos-smoke:

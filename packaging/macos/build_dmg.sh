@@ -1,0 +1,194 @@
+#!/bin/bash
+# ghlink macOS dmg 构建（v0.5.0：dmg+cask 混合方案）
+#
+# 设计口径（0.5.0 李工 13:45 拍板 dmg 路线恢复，拂晓 13:59 定格）：
+#   D1 = dmg 管 app（拖入 /Applications 即用，无 postinstall/relocate/收据链）
+#   D2 = 系统组件（LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）走一次性小 pkg
+#   D3 = LaunchAgent 托盘自启（app 首次启动自动注册，KeepAlive 保活）
+#   D4 = 割裂态防护（dmg 内 .app + 小 pkg + 安装引导）
+#
+# 产物：dist/macos/ghlink-<VERSION>.dmg + ghlink-<VERSION>-system.pkg
+# 内容：
+#   - ghlink-<VERSION>.dmg：ghlink.app（双击启动托盘，LOGO 图标，内嵌 CLI）+ README（安装引导）
+#   - ghlink-<VERSION>-system.pkg：LaunchDaemon 模板 + sudoers + /usr/local/bin/ghlink 软链（一次性）
+#
+# 用法: bash packaging/macos/build_dmg.sh
+# 依赖: hdiutil（macOS 自带）+ pkgbuild（小 pkg，macOS 自带）
+
+set -e
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# v0.4.15：版本号动态化——CI 取 GITHUB_REF_NAME（tag），本地取最近 git tag，可被 VERSION 覆盖
+VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
+echo "==> 构建版本: $VERSION"
+STAGE="$ROOT/build/macos-dmg"
+OUT="$ROOT/dist/macos"
+APP_NAME="ghlink.app"
+
+echo "==> 清理旧构建"
+rm -rf "$STAGE" "$OUT"
+mkdir -p "$STAGE" "$OUT"
+
+echo "==> 组装 .app（复用 build_pkg.sh D2 结构：内嵌 CLI + 托盘 + vendor）"
+APP="$STAGE/$APP_NAME"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/libexec/ghlink" "$APP/Contents/libexec/assets" "$APP/Contents/libexec/vendor"
+cp "$ROOT"/src/ghlink/*.py "$APP/Contents/libexec/ghlink/"
+cp "$ROOT/config.example.json" "$APP/Contents/libexec/"
+cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
+
+# vendor 依赖（托盘 pystray + Pillow）注入 .app，核心零依赖
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENDOR="$APP/Contents/libexec/vendor"
+WHEEL_DIR="$STAGE/wheels"
+rm -rf "$WHEEL_DIR"
+# 1) 通用依赖（pystray + PyObjC：universal2/纯 wheel，双架构通用）
+mkdir -p "$WHEEL_DIR/universal"
+"$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
+  -d "$WHEEL_DIR/universal" pystray six pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz --quiet || exit 1
+for W in "$WHEEL_DIR/universal"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/universal/unpacked"; done
+cp -R "$WHEEL_DIR/universal/unpacked/." "$VENDOR/"
+# 2) Pillow 分架构拉取 → lipo 合并 fat binary（单 dmg 通吃 Intel/Apple Silicon）
+for ARCH in x86_64 arm64; do
+  mkdir -p "$WHEEL_DIR/$ARCH"
+  PLATFORM="macosx_10_13_${ARCH}"
+  [ "$ARCH" = "arm64" ] && PLATFORM="macosx_11_0_${ARCH}"
+  "$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
+    --platform "$PLATFORM" --python-version 3.14 --abi cp314 \
+    -d "$WHEEL_DIR/$ARCH" Pillow --quiet || exit 1
+  for W in "$WHEEL_DIR/$ARCH"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/$ARCH/unpacked"; done
+done
+cp -R "$WHEEL_DIR/x86_64/unpacked/." "$VENDOR/"
+# v0.4.16：lipo 必须覆盖 .dylib——Pillow 的 @loader_path/.dylibs/*.dylib
+find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO; do
+  REL="${SO#"$VENDOR"/}"
+  ARM_SO="$WHEEL_DIR/arm64/unpacked/$REL"
+  if [ -f "$ARM_SO" ]; then
+    lipo -create "$SO" "$ARM_SO" -output "$SO.tmp" && mv "$SO.tmp" "$SO"
+    echo "    lipo merged: $REL"
+  fi
+done
+rm -rf "$WHEEL_DIR"
+
+# CLI 可执行（内嵌 .app；软链 /usr/local/bin/ghlink 指向此路径，sudoers 放行）
+cat > "$APP/Contents/MacOS/ghlink" <<EOF
+#!/bin/bash
+SELF="\$0"
+while [ -L "\$SELF" ]; do
+  LINK="\$(readlink "\$SELF")"
+  case "\$LINK" in
+    /*) SELF="\$LINK" ;;
+    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+  esac
+done
+APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
+export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
+  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
+done
+exec "/usr/local/bin/python3" -m ghlink.main "\$@"
+EOF
+chmod 0755 "$APP/Contents/MacOS/ghlink"
+
+# 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路，v0.5.0）
+cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
+#!/bin/bash
+SELF="\$0"
+while [ -L "\$SELF" ]; do
+  LINK="\$(readlink "\$SELF")"
+  case "\$LINK" in
+    /*) SELF="\$LINK" ;;
+    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+  esac
+done
+APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
+export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
+  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
+done
+exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
+EOF
+chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
+
+# Info.plist（v0.4.22：PkgInfo + CFBundlePackageType + LSUIElement 菜单栏识别）
+cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>ghlink</string>
+  <key>CFBundleDisplayName</key><string>ghlink</string>
+  <key>CFBundleIdentifier</key><string>com.ghlink.tray</string>
+  <key>CFBundleVersion</key><string>__VERSION__</string>
+  <key>CFBundleShortVersionString</key><string>__VERSION__</string>
+  <key>CFBundleExecutable</key><string>ghlink-tray</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>ghlink-icon</string>
+  <key>LSMinimumSystemVersion</key><string>10.15</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+PLIST
+sed -i '' "s/__VERSION__/$VERSION/g" "$APP/Contents/Info.plist"
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+chmod 0644 "$APP/Contents/PkgInfo"
+
+# 图标：png → icns
+ICON_PNG="$ROOT/assets/ghlink-icon.png"
+ICONSET="$STAGE/ghlink.iconset"
+mkdir -p "$ICONSET"
+for sz in 16 32 128 256 512; do
+  sips -z $sz $sz "$ICON_PNG" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null 2>&1
+  sips -z $((sz*2)) $((sz*2)) "$ICON_PNG" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null 2>&1
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ghlink-icon.icns"
+
+echo "==> 打包 dmg（拖入即用，无 postinstall/relocate/收据链）"
+# 应用安装引导页（割裂态防护 D4：提示装系统组件小 pkg）
+cat > "$STAGE/安装说明.txt" <<'EOF'
+ghlink 安装说明（v0.5.0 dmg 版）
+1. 把 ghlink.app 拖入 Applications 文件夹
+2. 首次运行 ghlink.app（右键 → 打开，未签名首次需授权）
+3. 如需系统值守（自动切 IP 写 hosts），双击安装 ghlink-<VERSION>-system.pkg
+   （一次性；包含 LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）
+4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
+EOF
+cp "$STAGE/安装说明.txt" "$STAGE/README.txt"
+hdiutil create -volname "ghlink" -srcfolder "$STAGE/ghlink.app" -ov \
+  -format UDZO "$STAGE/ghlink-${VERSION}.dmg" >/dev/null
+mv "$STAGE/ghlink-${VERSION}.dmg" "$OUT/"
+
+echo "==> 打包系统组件小 pkg（LaunchDaemon + sudoers + CLI 软链，一次性）"
+mkdir -p "$STAGE/system-root/usr/local/bin" "$STAGE/system-root/Library/LaunchDaemons" "$STAGE/system-root/usr/local/etc/ghlink"
+ln -s "/Applications/ghlink.app/Contents/MacOS/ghlink" "$STAGE/system-root/usr/local/bin/ghlink"
+cp "$ROOT/config.example.json" "$STAGE/system-root/usr/local/etc/ghlink/config.json"
+# LaunchDaemon 模板（enable 时由 ghlink 正式注册；此处落位模板，兼容 pkg 升级）
+cat > "$STAGE/system-root/Library/LaunchDaemons/com.ghlink.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.ghlink.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ghlink</string>
+        <string>/etc/ghlink/config.json</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key><string>/Applications/ghlink.app/Contents/libexec:/Applications/ghlink.app/Contents/libexec/vendor</string>
+    </dict>
+    <key>StartInterval</key><integer>3600</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>/var/log/ghlink.log</string>
+    <key>StandardErrorPath</key><string>/var/log/ghlink.log</string>
+</dict>
+</plist>
+PLIST
+pkgbuild --root "$STAGE/system-root" \
+  --identifier com.ghlink.system \
+  --version "$VERSION" \
+  "$OUT/ghlink-${VERSION}-system.pkg"
+
+echo "==> 完成:"
+ls -la "$OUT/"
