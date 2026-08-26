@@ -710,6 +710,15 @@ def _enable_autostart() -> bool:
                 return False
             import subprocess as _sp
 
+            # v0.5.9（赛博 01:22 根因分析：取消自启→再开启自启，disable 残留持久化在
+            # /var/db/.../disabled.*.plist，删 plist 删不掉；_enable_autostart 只 load 不
+            # enable → 重启时 launchd 不加载 job → 不启动）。开启自启必须反 disable
+            # （enable 幂等），与双击兜底 ①.5 同命令，彻底清掉 disable 残留。
+            _sp.run(
+                ["launchctl", "enable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+                timeout=10,
+            )
             # 赛博 09:56 问题 A：plist 照写（自启动注册必须成功），
             # 已在跑时不重复 load（避免多实例），靠单实例锁兜底
             if not _tray_alive(exclude_pid=os.getpid()):
