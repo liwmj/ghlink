@@ -658,9 +658,13 @@ def main() -> int:
     # darwin 额外：⑤ v0.4.25（李工 11:34 反馈：退出后双击 APP 起不来）——
     # 托盘自启 = LaunchAgent（用户会话），安装器不注册 → 进程退出后无机制拉起。
     # 启动时若未注册则自动注册（幂等），保证「双击 APP 启动过 → 下次登录自启」。
+    # v0.5.2（李工 16:48 实测：取消自启动后托盘被杀，重启进程自启被反噬）：
+    # 用户取消自启会写 ~/.ghlink/autostart_off 标记，自动注册必须尊重该意愿，
+    # 否则取消后进程一重启又把自启加回来（disable 语义被反噬）。
     if sys.platform == "darwin":
         try:
-            if not service._is_autostart():
+            marker = os.path.join(os.path.expanduser("~"), ".ghlink", "autostart_off")
+            if not service._is_autostart() and not os.path.exists(marker):
                 service._enable_autostart()
         except Exception:
             pass
@@ -670,6 +674,26 @@ def main() -> int:
             service._ensure_macos_system_components()
         except Exception:
             pass
+        # v0.5.2（李工 16:48 实测：双击 APP 无托盘）——LaunchServices 双击链路
+        # 图标落屏幕外 (-1,1108) + 单实例锁被旧残留占用 → 双击新实例被挡退出。
+        # 修复：非 launchd 启动（双击/LaunchServices/终端，无 LAUNCHD_JOB_KEYPTH）
+        # → kickstart LaunchAgent（走脚本路径渲染，已验证屏幕内），本进程退出，
+        # 不再 in-process 渲染。kickstart -k 顺带杀旧残留，单实例锁占坑从根上消。
+        if not os.environ.get("LAUNCHD_JOB_KEYPTH"):
+            try:
+                import subprocess as _sp
+
+                _sp.run(
+                    ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.ghlink.tray"],
+                    check=False,
+                )
+            except Exception:
+                pass
+            print(
+                "[ghlink] 已通过 LaunchAgent 启动托盘（kickstart），本进程退出",
+                file=sys.stderr,
+            )
+            return 0
 
     if not HAS_TRAY:  # pragma: no cover
         print(

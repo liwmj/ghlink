@@ -233,15 +233,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # v0.5.2（赛博根因 2026-08-26）：softprops v2 在 release 刚创建时更新资产元数据
+      # 会 404（已知竞态，v0.5.1 因此卡 draft 并被清）。升级 @v2（mutable 最新）+ files 去重：
+      # 原 artifacts/**/*.deb 会同时匹配 dist-linux 和 apt-repo/pool/main 两个同名 deb
+      # （ghlink_0.4.22-1_all.deb ×2）→ 重复上传同名 → 触发 overwrite 竞态 404。
+      # 修法：deb 只从 dist-linux 取一份，apt-repo 仅取仓库元数据（Packages.gz/Release）。
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/**/*.whl
-            artifacts/**/*.tar.gz
-            artifacts/**/*.exe
-            artifacts/**/*.pkg
-            artifacts/**/*.dmg
-            artifacts/**/*.deb
+            artifacts/dist-python/*.whl
+            artifacts/dist-python/*.tar.gz
+            artifacts/dist-windows/*.exe
+            artifacts/dist-macos-dmg/*.dmg
+            artifacts/dist-linux/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
           generate_release_notes: true

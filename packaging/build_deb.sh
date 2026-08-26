@@ -7,7 +7,10 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.22"
+# v0.5.2（李工版本一致性敏感，v0.5.0 起 deb 一直停在 0.4.22）：
+# 版本号动态取 git tag（与 build_dmg.sh 同款），可被 VERSION 环境变量覆盖
+VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
 PKG_NAME="ghlink_${VERSION}-1_all"
 BUILD_DIR="build/deb/${PKG_NAME}"
 

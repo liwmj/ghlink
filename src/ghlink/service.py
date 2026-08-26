@@ -674,6 +674,13 @@ def _enable_autostart() -> bool:
                 _sp.run(["launchctl", "load", plist], check=False)
             else:
                 print("[ghlink] 托盘已在运行，仅注册自启动（不重复拉起）")
+            # v0.5.2：开启自启 = 用户意愿为开，清除取消标记（_disable_autostart 写入）
+            try:
+                marker = os.path.join(os.path.expanduser("~"), ".ghlink", "autostart_off")
+                if os.path.exists(marker):
+                    os.remove(marker)
+            except Exception:
+                pass
             return True
         else:
             autostart_dir = os.path.expanduser("~/.config/autostart")
@@ -704,9 +711,24 @@ def _disable_autostart() -> bool:
             plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
             import subprocess as _sp
 
-            _sp.run(["launchctl", "unload", plist], check=False)
+            # v0.5.2（李工 16:48 实测：取消自启动 → 托盘被杀）：
+            # 原 launchctl unload 会终止当前 job 进程（托盘正由该 LaunchAgent 拉起）
+            # = 自杀。改 launchctl disable 只禁下次登录自启、不动当前进程；
+            # 删 plist 使 _is_autostart() 归位；写 ~/.ghlink/autostart_off 标记
+            # 防 tray.main() darwin 分支「未注册则自动注册」把取消意愿反噬。
+            _sp.run(
+                ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+            )
             if os.path.exists(plist):
                 os.remove(plist)
+            try:
+                marker = os.path.join(os.path.expanduser("~"), ".ghlink", "autostart_off")
+                os.makedirs(os.path.dirname(marker), exist_ok=True)
+                with open(marker, "w", encoding="utf-8") as f:
+                    f.write("1")
+            except Exception:
+                pass
             return True
         else:
             desktop = os.path.expanduser("~/.config/autostart/ghlink-tray.desktop")
