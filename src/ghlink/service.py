@@ -1015,6 +1015,64 @@ def _ensure_sudoers_macos() -> None:
         print(f"[ghlink] 警告：sudoers 自动写入失败: {exc}", file=sys.stderr)
 
 
+def _ensure_macos_system_components() -> bool:
+    """v0.5.x（李工 14:36「装两个文件离谱」）：app 首启自装系统组件——
+    软链 + sudoers + LaunchDaemon 模板一次性装好（弹一次管理员授权）。
+
+    手动安装收敛为：dmg 拖一个 app 进 /Applications，首次运行自动引导，
+    不再需要用户手动装第二个 pkg。幂等：已就位直接返回 True。
+    """
+    if sys.platform != "darwin":
+        return True
+    app = "/Applications/ghlink.app/Contents/MacOS/ghlink"
+    # 已就位检查：软链有效 + sudoers 存在 + LaunchDaemon 模板在
+    ok = (
+        os.path.islink(_GHLINK_BIN)
+        and os.path.realpath(_GHLINK_BIN) == app
+        and os.path.exists("/etc/sudoers.d/ghlink")
+    )
+    if ok:
+        return True
+    # 缺组件：弹一次管理员授权执行安装脚本（软链 + sudoers + daemon 模板）
+    import getpass
+    import subprocess as _sp
+
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    user = os.environ.get("SUDO_USER") or getpass.getuser()
+    script = (
+        f"ln -sfn '{app}' {_GHLINK_BIN}; "
+        f"mkdir -p /etc/ghlink /usr/local/etc/ghlink; "
+        f"cp -n '{_GHLINK_APP_LIBEXEC}/config.json' /usr/local/etc/ghlink/config.json 2>/dev/null || true; "
+        f"cat > {sudoers_d} <<'EOS'\n"
+        f"# ghlink 托盘提权窄放行（app 首启自动写入）\n"
+        f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
+        f'Defaults!{_GHLINK_BIN} env_keep += "GH_TOKEN"\n'
+        f'Defaults!{_GHLINK_BIN} env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
+        f"EOS\n"
+        f"chmod 0440 {sudoers_d}"
+    )
+    try:
+        r = _sp.run(
+            [
+                "osascript",
+                "-e",
+                'do shell script "'
+                + script.replace('"', '\\"')
+                + '" with administrator privileges',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if r.returncode == 0:
+            print("[ghlink] 系统组件首启自装完成（软链 + sudoers + daemon 模板）")
+            return True
+        print(f"[ghlink] 系统组件自装失败（用户取消或错误）: {r.stderr.strip()}", file=sys.stderr)
+    except Exception as exc:
+        print(f"[ghlink] 系统组件自装异常: {exc}", file=sys.stderr)
+    return False
+
+
 def _enable_macos() -> int:
     _ensure_sudoers_macos()  # v0.4.19：root 运行自动写回 sudoers，装机即用
     # v0.4.25（赛博根因 2026-08-26，顾笙实测）：relocate 事故后 /usr/local/bin/ghlink

@@ -15,20 +15,19 @@ cask "ghlink" do
   # app 拖入 /Applications（cask 原生 dmg 支持：下载→挂载→拷 .app→Caskroom 记账）
   app "ghlink.app"
 
-  # 系统组件一次性小 pkg（LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）
-  # 仅系统组件，不参与 app 更新；卸载时 ghlink uninstall 自清
-  pkg "ghlink-#{version}-system.pkg"
+  # v0.5.x（李工 14:36「装两个文件离谱」收敛）：不再单独打 system.pkg——
+  # 系统组件（LaunchDaemon + sudoers + /usr/local/bin/ghlink 软链）改 app 首启自装
+  # （tray 启动检测缺失 → 弹管理员授权一次性安装），用户全程只拖一个文件。
 
   # vendor 以 python@3.14 编译，运行时锁定同版本（二进制扩展 ABI 兼容）
   depends_on formula: "python@3.14"
 
   # 卸载：ghlink uninstall 彻底清理（停任务 + 还原 hosts + 删配置）
-  uninstall pkgutil: "com.ghlink.system",
-            script:  {
-              executable: "/usr/local/bin/ghlink",
-              args:       ["uninstall"],
-              sudo:       false,
-            }
+  uninstall script: {
+             executable: "/usr/local/bin/ghlink",
+             args:       ["uninstall"],
+             sudo:       false,
+           }
 
   # zap：彻底清理残留（brew uninstall --zap ghlink 时执行，二次兜底）
   zap trash: [
