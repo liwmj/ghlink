@@ -146,7 +146,11 @@ class _MacTray(NSObject):
         try:
             color = _tray._state_color()
             status = _tray._status_text()
-            key = (color, status)
+            # v0.5.12（李工 13:18 ARM 实测）：菜单重建判定须含 watching/autostart——
+            # 仅 (color,status) 时点「关闭开机自启」后 key 不变 → 菜单不重建 → 勾选残留旧态
+            watching = service._is_enabled()
+            autostart = service._is_autostart()
+            key = (color, status, watching, autostart)
             if getattr(self, "_menu_key", None) == key:
                 return
             # v0.5.13（李工 09:37 ARM 托盘不显示定位）：NSStatusItem 渲染必须经

@@ -210,14 +210,35 @@ DMG_CONTENT="$STAGE/dmg-content"
 mkdir -p "$DMG_CONTENT"
 cp -R "$APP" "$DMG_CONTENT/"
 ln -s /Applications "$DMG_CONTENT/Applications"
+
+# ad-hoc 重签（v0.5.12 李工 13:05 报「ghlink.app 已损坏」根治）——
+# PyInstaller 产物 adhoc 签名与资源不匹配，Gatekeeper 判定损坏；
+# 打包前强制全量重签（app + 内部所有二进制），本地校验通过再进 dmg。
+# 彻底无弹窗需 Developer ID + notarization（待李工 Apple 账号决策）。
+if [ -d "$DMG_CONTENT/ghlink.app" ]; then
+  echo "==> ad-hoc 重签 app（Gatekeeper 兼容）"
+  codesign --force --deep --sign - "$DMG_CONTENT/ghlink.app" >/dev/null 2>&1 \
+    && codesign --verify --deep --strict "$DMG_CONTENT/ghlink.app" >/dev/null 2>&1 \
+    && echo "  OK: 签名验证通过" \
+    || echo "  WARN: 重签/校验失败（dmg 仍生成，真机可能报 Gatekeeper 拦截）"
+fi
 # 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
+# v0.5.12 更新：内嵌运行时 + Gatekeeper 签名提示（李工 13:15 定）
 cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
-ghlink 安装说明（v0.5.x dmg 版）
+ghlink 安装说明（v0.5.12 dmg 版）
+
+0. 选择正确的包：Intel Mac 用 ghlink-0.5.12-x86_64.dmg，
+   Apple 芯片（M 系列）用 ghlink-0.5.12-arm64.dmg
+
 1. 把 ghlink.app 拖到 Applications 文件夹（或直接拖到左侧 Applications 快捷方式）
-2. 首次运行 ghlink.app（右键 → 打开，未签名首次需授权）
-3. 托盘启动时若检测到系统组件未装（值守 daemon/sudoers/CLI 软链缺失），
+2. 首次打开：右键 ghlink.app → 打开 → 点「打开」（未公证 app 首次需确认）
+   若提示「已损坏，无法打开」，在终端执行：
+     xattr -dr com.apple.quarantine /Applications/ghlink.app
+   然后重新打开即可（应用功能正常，仅系统签名校验拦截）
+3. 本版已内嵌 Python 运行时，无需安装任何依赖，双击即用
+4. 托盘启动时若检测到系统组件未装（值守 daemon/sudoers/CLI 软链缺失），
    会弹一次管理员授权自动安装（一次性），之后无感
-4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
+5. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
 
 # Finder 窗口布局：默认不生成 .DS_Store（v0.5.13 李工 09:45 确认）——

@@ -845,6 +845,9 @@ def main() -> int:
     _hide_dock_icon()
 
     # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
+    # v0.5.12（李工 13:30 ARM 实测）：必须在 darwin 原生渲染路由之前写——
+    # 否则 HAS_NATIVE 分支 return _tray_macos.main() 提前退出 → PID 文件缺失 →
+    # _tray_alive() 误判「托盘未运行」（pgrep 兜底也匹配不到 PyInstaller 产物）
     service._write_tray_pid()
 
     # v0.5.13（李工 09:54 ARM 实测）：macOS 启用 PyObjC 原生渲染（tray_macos.py）——
