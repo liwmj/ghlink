@@ -847,6 +847,19 @@ def main() -> int:
     # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
     service._write_tray_pid()
 
+    # v0.5.13（李工 09:54 ARM 实测）：macOS 启用 PyObjC 原生渲染（tray_macos.py）——
+    # 0.4.25 因实现 bug 回退 pystray 后未再启用；pystray 0.19.5 在 ARM/新系统
+    # 菜单栏图标不渲染（0.4.24 实锤）。button 渲染姿势已修（statusItem.button()），
+    # 现在接回 darwin 分支：HAS_NATIVE（PyObjC 在包内）时原生渲染，缺失则回退 pystray。
+    if sys.platform == "darwin":
+        try:
+            from . import tray_macos as _tray_macos
+
+            if _tray_macos.HAS_NATIVE:
+                return _tray_macos.main()
+        except Exception:
+            pass
+
     # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定
     # （值守未启用→蓝，修复绿角标+菜单未运行不匹配）
     color = _state_color()
