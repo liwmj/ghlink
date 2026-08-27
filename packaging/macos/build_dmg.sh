@@ -223,11 +223,11 @@ if [ -d "$DMG_CONTENT/ghlink.app" ]; then
 fi
 # 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
 # v0.5.12 更新：内嵌运行时 + Gatekeeper 签名提示（李工 13:15 定）
-cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
-ghlink 安装说明（v0.5.12 dmg 版）
+cat > "$DMG_CONTENT/安装说明.txt" <<EOF
+ghlink 安装说明（${VERSION%-*} dmg 版）
 
-0. 选择正确的包：Intel Mac 用 ghlink-0.5.12-x86_64.dmg，
-   Apple 芯片（M 系列）用 ghlink-0.5.12-arm64.dmg
+0. 选择正确的包：Intel Mac 用 ghlink-${VERSION%-*}-x86_64.dmg，
+   Apple 芯片（M 系列）用 ghlink-${VERSION%-*}-arm64.dmg
 
 1. 把 ghlink.app 拖到 Applications 文件夹（或直接拖到左侧 Applications 快捷方式）
 2. 首次打开：右键 ghlink.app → 打开 → 点「打开」（未公证 app 首次需确认）
