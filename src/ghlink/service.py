@@ -488,7 +488,13 @@ def uninstall() -> int:
         return elevated
     rc = disable()
     if rc != 0:
-        return rc
+        # v0.5.12（赛博 08:37 根因 + 李工 08:38 批准）：disable 失败不再阻断卸载——
+        # 计划任务不存在/已手动删过等场景下提前 return 会跳过 remove_block，
+        # hosts 的 ghlink 块残留。仅告警，后续清理照常执行。
+        print(
+            f"[ghlink] 警告：停用值守失败（rc={rc}），继续执行 hosts 还原与残留清理",
+            file=sys.stderr,
+        )
     # 还原 hosts（删 ghlink 段落 + 恢复基线）
     if hosts_manager.remove_block():
         print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
