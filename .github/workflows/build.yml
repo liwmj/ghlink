@@ -204,12 +204,12 @@ jobs:
         run: |
           # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
           # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
-          pip install --only-binary :all: ds-store==1.3.3
+          python3 -m pip install --only-binary :all: ds-store==1.3.3
           # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」根因）：pyobjc 必须装成功
           # 且被 PyInstaller 收集进包——之前 --quiet 吞了安装失败，PyInstaller 缺
           # PyObjC 只警告不失败 → 产物无 PyObjC → HAS_NATIVE=False → 回退 pystray
           # → ARM 原生不渲染 → 无托盘。去掉 --quiet + 安装后验证 + set -e 兜底。
-          pip install pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          python3 -m pip install pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
           python3 -c "import objc, AppKit, Foundation, Quartz; print('PyObjC OK')"
           # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」第二层根因）：CI 的 python.org
           # framework Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败
