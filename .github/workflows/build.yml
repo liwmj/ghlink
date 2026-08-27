@@ -189,9 +189,16 @@ jobs:
       sha_arm: ${{ steps.sha.outputs.arm }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
+      - name: Setup Homebrew Python 3.14
+        run: |
+          # v0.5.12（李工 21:16 实锤第三层根因）：CI 的 python.org framework Python
+          # （/Library/Frameworks/Python.framework）与 PyInstaller 6.22.2 不兼容——
+          # spec 收集 PyObjC .so 成功（18 条）但 EXE 阶段静默丢弃（本机 universal2
+          # 尝试同款 exit -6 SIGABRT）。改用 Homebrew python@3.14 打包（本机 Homebrew
+          # 验证 13 条 PyObjC 进包成功）。
+          brew install python@3.14
+          echo "$(brew --prefix python@3.14)/bin" >> "$GITHUB_PATH"
+          python3 --version
       - name: Build dmg (PyInstaller 双包, v0.5.12)
         id: sha
         run: |
