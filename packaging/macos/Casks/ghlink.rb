@@ -1,7 +1,9 @@
 cask "ghlink" do
+  # v0.5.12（李工 ARM brew 404 根因）：#{arch} 必须先定义 arch 方法才有值
+  arch arm: "arm64", intel: "x86_64"
   version "0.5.0"
-  sha256 arm:   "fa7eb2eca4d64e6324a37ea8318051f7df0040efd9c720db72674b16eafd2a27",
-       intel: "28e1110ecadb399e4f07ca20e653c65707eced6cf71db2b61b19e2f45a52272f"
+  sha256 arm:   "fd256f7803bfc8348812746fc357df2dfe682732b44edabf8f28e3e667946fe5",
+       intel: "ce7db670009d2e9bb1fbcc03a8ebba93d3308ee29a124a40997e9016e39b25c6"
 
   # v0.5.0（李工 13:45 拍板 dmg 路线恢复，拂晓 13:59 定格）：dmg+cask 混合方案
   # - dmg 管 app：拖入 /Applications 即用，无 postinstall/relocate/收据链（Code 112 类问题根治）
