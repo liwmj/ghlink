@@ -181,12 +181,19 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: [build-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
+    # v0.5.12（拂晓 16:53 根因）：Sync Cask 曾在矩阵 job 内各自 push，
+    # x86_64/arm64 实例互写空值覆盖 tap（intel 空值 bug）。改：每个实例
+    # 只输出自己架构的 sha256 到 job outputs，独立 sync-cask job 一次写双真值。
+    outputs:
+      sha_x86: ${{ steps.sha.outputs.x86 }}
+      sha_arm: ${{ steps.sha.outputs.arm }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
       - name: Build dmg (PyInstaller 双包, v0.5.12)
+        id: sha
         run: |
           # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
           # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
@@ -194,24 +201,44 @@ jobs:
           pip install --quiet pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
           USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
-          # 输出 dmg sha256 供 Cask 同步使用（v0.5.12 双包：arm64/x86_64 分别输出）
-          ARM_DMG="$(ls dist/macos/ghlink-*-arm64.dmg 2>/dev/null | head -1)"
-          X86_DMG="$(ls dist/macos/ghlink-*-x86_64.dmg 2>/dev/null | head -1)"
-          echo "DMG_SHA256_ARM=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
-          echo "DMG_SHA256_X86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
-      - name: Sync Cask to tap (homebrew-tap)
+          # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
+          echo "arm=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "x86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-dmg
+          path: dist/macos/
+
+  # v0.5.12（拂晓 16:53 根因）：Sync Cask 从矩阵 job 抽出——矩阵实例各自 push
+  # 会互相覆盖（x86_64 实例写 intel 真值+arm 空、arm64 实例写 arm 真值+intel 空，
+  # 谁后跑完谁覆盖 → tap 必坏）。独立 job needs 矩阵 outputs 一次写双真值。
+  sync-cask:
+    name: Sync Cask to tap (homebrew-tap)
+    runs-on: ubuntu-latest
+    needs: [build-macos-pkg]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync Cask (双 sha256 一次写)
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
+          SHA_ARM: ${{ needs.build-macos-pkg.outputs.sha_arm }}
+          SHA_X86: ${{ needs.build-macos-pkg.outputs.sha_x86 }}
         run: |
           set -e
           TAP_REPO="liwmj/homebrew-tap"
           TAG="${GITHUB_REF#refs/tags/}"
+          if [ -z "$SHA_ARM" ] || [ -z "$SHA_X86" ]; then
+            echo "!! 双 sha256 未齐（arm=$SHA_ARM, x86=$SHA_X86），跳过 sync 防覆盖"
+            exit 0
+          fi
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          # 替换 Cask 中的 sha256 为双包真值（arm64/x86_64 分别写）+ version 随 tag 动态化（macOS BSD sed 需 -i ''）
-          sed -i '' "s/sha256 arm:.*/sha256 arm:   \"${DMG_SHA256_ARM}\",/" packaging/macos/Casks/ghlink.rb
-          sed -i '' "s/       intel:.*/       intel: \"${DMG_SHA256_X86}\"/" packaging/macos/Casks/ghlink.rb
-          sed -i '' "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
+          # 双包真值分别写 arm/intel + version 随 tag 动态化（Linux sed 语法）
+          sed -i "s/sha256 arm:.*/sha256 arm:   \"${SHA_ARM}\",/" packaging/macos/Casks/ghlink.rb
+          sed -i "s/       intel:.*/       intel: \"${SHA_X86}\"/" packaging/macos/Casks/ghlink.rb
+          sed -i "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
           git config user.name "ghlink-bot"
@@ -223,11 +250,6 @@ jobs:
           else
             echo "cask 无变化，跳过"
           fi
-      - name: Upload dmg artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-macos-dmg
-          path: dist/macos/
 
   macos-smoke:
     name: macOS real-machine smoke (hosts switch/rollback)
