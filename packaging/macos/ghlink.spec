@@ -73,7 +73,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=["pytest", "tests"],
-    noarchive=False,
+    noarchive=True,
 )
 
 # ---------- 托盘入口（windowed，无控制台） ----------
@@ -99,7 +99,7 @@ a_tray = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=["pytest", "tests"],
-    noarchive=False,
+    noarchive=True,
 )
 
 pyz = PYZ(a.pure)
