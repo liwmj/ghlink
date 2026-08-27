@@ -9,29 +9,35 @@
 
 import sys
 from pathlib import Path
-import glob
 
 # SPECPATH = packaging/macos/，仓库根 = 上两级
 ROOT = Path(SPECPATH).resolve().parent.parent
 SRC = ROOT / "src"
 
-# v0.5.12（李工 18:14「修复版仍无托盘」真根因实锤）：CI 的 python.org framework
-# Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败（本机 universal2
-# 尝试同款 exit -6 SIGABRT）→ 产物缺 AppKit/objc/Foundation/Quartz 的 .so →
-# HAS_NATIVE=False → 回退 pystray → ARM 原生不渲染 → 无托盘。
-# 修复：不依赖 hook，直接 glob site-packages 下 PyObjC 相关包的全部 .so 显式进 binaries。
+
+import glob
+
+# v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」真根因）：PyInstaller 6.22.2
+# 在 CI 的 python.org framework Python 上隔离模式 hook 收集 PyObjC 动态库静默
+# 失败 → 产物缺 AppKit/objc/Foundation/Quartz 的 .so → HAS_NATIVE=False → 回退
+# pystray → ARM 原生不渲染 → 无托盘（本机 bincache 缓存兜底掩盖了 hook 失效）。
+# 修复：不依赖 hook，glob site-packages 下 PyObjC 核心包的全部 .so 显式进
+# binaries（排除 PIL——PIL 由 PyInstaller 自带 hook-PIL 收集，避免 bincache 冲突）。
 def _pyobjc_binaries():
     bins = []
     try:
         import objc  # noqa: F401
         sp = Path(objc.__file__).resolve().parent.parent  # site-packages 根
-        for pkg in ("objc", "AppKit", "Foundation", "Quartz", "CoreFoundation", "PIL"):
+        for pkg in ("objc", "AppKit", "Foundation", "Quartz", "CoreFoundation"):
             base = sp / pkg
             for so in sorted(glob.glob(str(base / "**" / "*.so"), recursive=True)):
                 if ".dSYM" in so:
                     continue
-                rel = str(Path(so).relative_to(sp))
-                bins.append((so, rel))
+                # PyInstaller binaries 的 dest 是「目标目录」（相对 app 根），
+                # 不是完整文件路径——写完整路径会被当目录创建导致同名冲突
+                # （IsADirectoryError，6.22.2 bincache 实测踩坑）
+                rel_dir = str(Path(so).parent.relative_to(sp))
+                bins.append((so, rel_dir))
         print(f"PyObjC binaries collected: {len(bins)}")
     except Exception as e:
         print(f"WARN: pyobjc binaries collect failed: {e}")
