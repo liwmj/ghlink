@@ -220,7 +220,7 @@ jobs:
           # （--clean 只清 build/ 不清 bincache）——构建前强制清 bincache，保证 PyObjC .so 干净收集
           rm -rf "$HOME/Library/Application Support/pyinstaller/bincache"*
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
-          USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
+          USE_PYINSTALLER=1 VERSION=${GITHUB_REF_NAME#v}-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
           echo "arm=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "x86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
