@@ -87,44 +87,65 @@ fi
 rm -rf "$WHEEL_DIR"
 
 # CLI 可执行（内嵌 .app；首启自装时软链 /usr/local/bin/ghlink 指向此路径）
-cat > "$APP/Contents/MacOS/ghlink" <<EOF
+cat > "$APP/Contents/MacOS/ghlink" <<'EOF'
 #!/bin/bash
-SELF="\$0"
-while [ -L "\$SELF" ]; do
-  LINK="\$(readlink "\$SELF")"
-  case "\$LINK" in
-    /*) SELF="\$LINK" ;;
-    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
   esac
 done
-APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
-export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+APP_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+export PYTHONPATH="$APP_DIR/libexec:$APP_DIR/libexec/vendor"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# v0.5.13（李工 10:30 发布风险）：vendored 依赖按 cp314 ABI 编译，python 必须 3.14。
+# 找不到/版本不符时给明确提示，不再静默报「缺少托盘依赖」假象。
+_py() {
+  "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 14) else 1)' 2>/dev/null
+}
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
-  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
+  if [ -x "$PY" ] && _py "$PY"; then
+    exec "$PY" -m ghlink.main "$@"
+  fi
 done
-exec "/usr/local/bin/python3" -m ghlink.main "\$@"
+if command -v python3 >/dev/null 2>&1 && _py "$(command -v python3)"; then
+  exec "$(command -v python3)" -m ghlink.main "$@"
+fi
+echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请安装: brew install python@3.14" >&2
+exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
 
 # 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路）
-cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
+cat > "$APP/Contents/MacOS/ghlink-tray" <<'EOF'
 #!/bin/bash
-SELF="\$0"
-while [ -L "\$SELF" ]; do
-  LINK="\$(readlink "\$SELF")"
-  case "\$LINK" in
-    /*) SELF="\$LINK" ;;
-    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
   esac
 done
-APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
-export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+APP_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+export PYTHONPATH="$APP_DIR/libexec:$APP_DIR/libexec/vendor"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# v0.5.13（李工 10:30 发布风险）：同 ghlink wrapper，python 必须 3.14
+_py() {
+  "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 14) else 1)' 2>/dev/null
+}
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
-  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
+  if [ -x "$PY" ] && _py "$PY"; then
+    exec "$PY" -m ghlink.main tray "$@"
+  fi
 done
-exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
+if command -v python3 >/dev/null 2>&1 && _py "$(command -v python3)"; then
+  exec "$(command -v python3)" -m ghlink.main tray "$@"
+fi
+echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请安装: brew install python@3.14" >&2
+exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
 
