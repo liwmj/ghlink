@@ -146,7 +146,7 @@ class _MacTray(NSObject):
         try:
             color = _tray._state_color()
             status = _tray._status_text()
-            key = (color, status)
+            key = (color, status, service._is_autostart())
             if getattr(self, "_menu_key", None) == key:
                 return
             # v0.5.13（李工 09:37 ARM 托盘不显示定位）：NSStatusItem 渲染必须经
