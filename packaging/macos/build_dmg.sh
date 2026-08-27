@@ -35,9 +35,27 @@ cp "$ROOT"/src/ghlink/*.py "$APP/Contents/libexec/ghlink/"
 cp "$ROOT/config.example.json" "$APP/Contents/libexec/"
 cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
 
-# vendor 依赖（托盘 pystray + Pillow）注入 .app，核心零依赖
+# v0.5.12（李工 10:34 拍板）：内嵌 python 运行时（PyInstaller 自包含）——
+# DMG 用户零依赖（不需要 brew python@3.14）。USE_PYINSTALLER=1 且产物存在时
+# 用 PyInstaller 产物（dist/macos-pyi/ghlink + ghlink-tray）替换 wrapper+vendor。
+PYI_MODE=0
+if [ "${USE_PYINSTALLER:-0}" = "1" ] && [ -x "$ROOT/dist/macos-pyi/ghlink" ] && [ -x "$ROOT/dist/macos-pyi/ghlink-tray" ]; then
+  echo "==> PyInstaller 内嵌模式：复制自包含产物"
+  cp "$ROOT/dist/macos-pyi/ghlink" "$APP/Contents/MacOS/ghlink"
+  cp "$ROOT/dist/macos-pyi/ghlink-tray" "$APP/Contents/MacOS/ghlink-tray"
+  chmod 0755 "$APP/Contents/MacOS/ghlink" "$APP/Contents/MacOS/ghlink-tray"
+  PYI_MODE=1
+else
+  echo "==> 传统模式：wrapper + vendored 依赖"
+fi
+
+# vendor 依赖（托盘 pystray + Pillow）注入 .app，核心零依赖（仅传统模式）
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENDOR="$APP/Contents/libexec/vendor"
+if [ "$PYI_MODE" = "1" ]; then
+  # PyInstaller 模式：无 vendor 需要，占位保持目录结构
+  :
+else
 WHEEL_DIR="$STAGE/wheels"
 rm -rf "$WHEEL_DIR"
 # 1) 通用依赖（pystray + PyObjC：universal2/纯 wheel，双架构通用）
@@ -85,8 +103,11 @@ if [ -d "$WHEEL_DIR/arm64/unpacked/PIL/.dylibs" ]; then
   done
 fi
 rm -rf "$WHEEL_DIR"
+fi  # PYI_MODE else 闭合
 
 # CLI 可执行（内嵌 .app；首启自装时软链 /usr/local/bin/ghlink 指向此路径）
+# v0.5.12：PyInstaller 模式（PYI_MODE=1）已复制自包含产物，跳过 wrapper
+if [ "$PYI_MODE" != "1" ]; then
 cat > "$APP/Contents/MacOS/ghlink" <<'EOF'
 #!/bin/bash
 SELF="$0"
@@ -117,8 +138,10 @@ echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请
 exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
+fi
 
 # 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路）
+if [ "$PYI_MODE" != "1" ]; then
 cat > "$APP/Contents/MacOS/ghlink-tray" <<'EOF'
 #!/bin/bash
 SELF="$0"
@@ -148,6 +171,7 @@ echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请
 exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
+fi
 
 # Info.plist（v0.4.22：PkgInfo + CFBundlePackageType + LSUIElement 菜单栏识别）
 cat > "$APP/Contents/Info.plist" <<'PLIST'
