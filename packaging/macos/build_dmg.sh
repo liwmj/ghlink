@@ -39,10 +39,9 @@ cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
 # DMG 用户零依赖（不需要 brew python@3.14）。USE_PYINSTALLER=1 且产物存在时
 # 用 PyInstaller 产物（dist/macos-pyi/ghlink + ghlink-tray）替换 wrapper+vendor。
 PYI_MODE=0
-if [ "${USE_PYINSTALLER:-0}" = "1" ] && [ -x "$ROOT/dist/macos-pyi/ghlink" ] && [ -x "$ROOT/dist/macos-pyi/ghlink-tray" ]; then
-  echo "==> PyInstaller 内嵌模式：复制自包含产物"
-  cp "$ROOT/dist/macos-pyi/ghlink" "$APP/Contents/MacOS/ghlink"
-  cp "$ROOT/dist/macos-pyi/ghlink-tray" "$APP/Contents/MacOS/ghlink-tray"
+if [ "${USE_PYINSTALLER:-0}" = "1" ] && [ -d "$ROOT/dist/macos-pyi/ghlink" ]; then
+  echo "==> PyInstaller 内嵌模式（onedir）：复制自包含产物（ghlink + ghlink-tray + _internal）"
+  cp -R "$ROOT/dist/macos-pyi/ghlink/." "$APP/Contents/MacOS/"
   chmod 0755 "$APP/Contents/MacOS/ghlink" "$APP/Contents/MacOS/ghlink-tray"
   PYI_MODE=1
 else
