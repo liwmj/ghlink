@@ -169,76 +169,34 @@ jobs:
           ghlink status
 
   build-macos-pkg:
-    name: macOS dmg (PyInstaller 双包)
-    strategy:
-      matrix:
-        include:
-          # v0.5.13（李工令重打 + Intel 真机需 x86_64）：恢复双 arch
-          - arch: x86_64
-            runner: macos-13
-          - arch: arm64
-            runner: macos-14
-    runs-on: ${{ matrix.runner }}
+    name: macOS dmg (vendored 传统模式)
+    runs-on: macos-latest
     needs: [build-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
-    # v0.5.12（拂晓 16:53 根因）：Sync Cask 曾在矩阵 job 内各自 push，
-    # x86_64/arm64 实例互写空值覆盖 tap（intel 空值 bug）。改：每个实例
-    # 只输出自己架构的 sha256 到 job outputs，独立 sync-cask job 一次写双真值。
+    # v0.5.13 还原（李工 00:08 令）：放弃 PyInstaller 内嵌运行时（34.1MB 大包/塞 PyObjC 进包），
+    # 回到 v0.5.0~v0.5.11 传统 vendored 模式——build_dmg.sh 单 runner 内下载
+    # x86_64+arm64 双架构 wheel + lipo 合并 → universal dmg（Intel/ARM 都能跑），
+    # 不打包库进包，系统 brew python@3.14 跑 vendored 依赖。macos-latest 单 runner 即可。
     outputs:
-      sha_x86: ${{ steps.sha.outputs.x86 }}
-      sha_arm: ${{ steps.sha.outputs.arm }}
+      sha256: ${{ steps.sha.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Homebrew Python 3.13
-        run: |
-          # v0.5.12（李工 21:16 实锤第三层根因）：CI 的 python.org framework Python
-          # （/Library/Frameworks/Python.framework）与 PyInstaller 6.22.2 不兼容——
-          # spec 收集 PyObjC .so 成功（18 条）但 EXE 阶段静默丢弃（本机 universal2
-          # 尝试同款 exit -6 SIGABRT）。改用 Homebrew python@3.13 打包（3.14 PYZ zlib 损坏，李工 23:08 实测仍崩）（本机 Homebrew
-          # 验证 13 条 PyObjC 进包成功）。
-          brew install python@3.13
-          # PEP 668 externally-managed：Homebrew python 禁止裸 pip 系统级安装，
-          # 必须用 venv（PR #160，顾笙本机验证 PyObjC 13 条进包同款路径）
-          python3 -m venv /tmp/ghlink-venv
-          echo "/tmp/ghlink-venv/bin" >> "$GITHUB_PATH"
-          python3 --version
-          which python3
-          python3 -c "import sys; print(sys.executable)"
-      - name: Build dmg (PyInstaller 双包)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Build dmg (vendored universal)
         id: sha
         run: |
-          # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
-          # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
-          # PEP 668：venv 内 pip 正常（python3 已指向 /tmp/ghlink-venv/bin）
-          python3 -m pip install --break-system-packages --only-binary :all: ds-store==1.3.3
-          # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」根因）：pyobjc 必须装成功
-          # 且被 PyInstaller 收集进包——之前 --quiet 吞了安装失败，PyInstaller 缺
-          # PyObjC 只警告不失败 → 产物无 PyObjC → HAS_NATIVE=False → 回退 pystray
-          # → ARM 原生不渲染 → 无托盘。去掉 --quiet + 安装后验证 + set -e 兜底。
-          python3 -m pip install --break-system-packages pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
-          python3 -c "import objc, AppKit, Foundation, Quartz; print('PyObjC OK')"
-          # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」第二层根因）：CI 的 python.org
-          # framework Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败
-          # （本机 universal2 尝试同款 exit -6 SIGABRT）→ 产物缺 PyObjC .so。
-          # 双保险：①禁用隔离（PYINSTALLER_DISABLE_ISOLATED=1）②spec 显式 glob 收集（见 ghlink.spec）
-          # export PYINSTALLER_DISABLE_ISOLATED=1  # test: 验证是否 PYZ 崩溃破坏者
-          # v0.5.12（李工 21:13 催 ARM 包）：PyInstaller bincache 脏缓存撞 IsADirectoryError
-          # （--clean 只清 build/ 不清 bincache）——构建前强制清 bincache，保证 PyObjC .so 干净收集
-          rm -rf "$HOME/Library/Application Support/pyinstaller/bincache"*
-          python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
-          USE_PYINSTALLER=1 VERSION=${GITHUB_REF_NAME#v}-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
-          # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
-          echo "arm=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "x86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          pip install --only-binary :all: ds-store==1.3.3
+          VERSION=${GITHUB_REF_NAME#v} bash packaging/macos/build_dmg.sh
+          DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
+          echo "sha256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Upload dmg artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist-macos-dmg
           path: dist/macos/
 
-  # v0.5.12（拂晓 16:53 根因）：Sync Cask 从矩阵 job 抽出——矩阵实例各自 push
-  # 会互相覆盖（x86_64 实例写 intel 真值+arm 空、arm64 实例写 arm 真值+intel 空，
-  # 谁后跑完谁覆盖 → tap 必坏）。独立 job needs 矩阵 outputs 一次写双真值。
   sync-cask:
     name: Sync Cask to tap (homebrew-tap)
     runs-on: ubuntu-latest
@@ -246,24 +204,21 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
-      - name: Sync Cask (双 sha256 一次写)
+      - name: Sync Cask (单 sha256)
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
-          SHA_ARM: ${{ needs.build-macos-pkg.outputs.sha_arm }}
-          SHA_X86: ${{ needs.build-macos-pkg.outputs.sha_x86 }}
+          SHA256: ${{ needs.build-macos-pkg.outputs.sha256 }}
         run: |
           set -e
           TAP_REPO="liwmj/homebrew-tap"
           TAG="${GITHUB_REF#refs/tags/}"
-          if [ -z "$SHA_ARM" ] || [ -z "$SHA_X86" ]; then
-            echo "!! 双 sha256 未齐（arm=$SHA_ARM, x86=$SHA_X86），跳过 sync 防覆盖"
+          if [ -z "$SHA256" ]; then
+            echo "!! sha256 为空，跳过 sync 防坏 tap"
             exit 0
           fi
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          # 双包真值分别写 arm/intel + version 随 tag 动态化（Linux sed 语法）
-          sed -i "s/sha256 arm:.*/sha256 arm:   \"${SHA_ARM}\",/" packaging/macos/Casks/ghlink.rb
-          sed -i "s/       intel:.*/       intel: \"${SHA_X86}\"/" packaging/macos/Casks/ghlink.rb
+          sed -i "s/REPLACE_WITH_DMG_SHA256/${SHA256}/" packaging/macos/Casks/ghlink.rb
           sed -i "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
