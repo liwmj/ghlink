@@ -40,7 +40,13 @@ def _pyobjc_binaries():
         print(f"WARN: pyobjc binaries collect failed: {e}")
     return bins
 
-PYOBJC_BINARIES = _pyobjc_binaries()
+# v0.5.13（拂晓 21:1x 二次实锤）：手动 glob 显式收集嵌套路径 .so（如
+        # Quartz/QuickLookUI/_QuickLookUI...so）会触发 PyInstaller bincache 冲突
+        # （IsADirectoryError：缓存位置被目录占用）——单 spec 双 EXE 共享 bincache 时
+        # 确定性复现（runner 全新也中招）。改回走 PyInstaller 自带 hook：非隔离模式
+        # （build.yml PYINSTALLER_DISABLE_ISOLATED=1）下 hook 收集正常，
+        # v0.5.12 缺 .so 真因是当时 pyobjc 安装被 --quiet 吞错（已修：去 --quiet + 验证 + set -e）。
+        PYOBJC_BINARIES = []  # 显式收集停用，PyObjC .so 由 hook 收集
 
 # ---------- CLI 入口 ----------
 a = Analysis(
