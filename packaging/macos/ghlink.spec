@@ -108,9 +108,8 @@ pyz_tray = PYZ(a_tray.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="ghlink",
     debug=False,
     bootloader_ignore_signals=False,
@@ -132,9 +131,8 @@ exe = EXE(
 exe_tray = EXE(
     pyz_tray,
     a_tray.scripts,
-    a_tray.binaries,
-    a_tray.datas,
     [],
+    exclude_binaries=True,
     name="ghlink-tray",
     debug=False,
     bootloader_ignore_signals=False,
@@ -151,4 +149,19 @@ exe_tray = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+
+# v0.5.13（onedir 改造）：onefile 式 EXE 带 binaries/datas -> 大 CArchive ->
+# zlib.error Error -3（PyInstaller 6.22.2 + CI 环境必现，wrapper 不走归档正常）。
+# 转 onedir：EXE 只留 bootloader（exclude_binaries=True）+ COLLECT 合并依赖，
+# 产物 dist/macos-pyi/ghlink/{ghlink, ghlink-tray, _internal/}，绕开 CArchive。
+coll = COLLECT(
+    exe,
+    exe_tray,
+    a.binaries,
+    a_tray.binaries,
+    a.datas,
+    a_tray.datas,
+    name="ghlink",
 )
