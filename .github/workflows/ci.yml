@@ -2,10 +2,7 @@ name: CI (lint + type + test)
 
 on:
   push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-  workflow_dispatch:
+    tags: ["v*"]
 
 jobs:
   quality:
@@ -51,13 +48,12 @@ jobs:
       - name: 校验发布 workflow 存在且触发条件正确
         run: |
           set -e
-          # 1) 发布 workflow 文件必须存在（P-007：tag 触发构建发包 + release 触发 PyPI）
-          for wf in .github/workflows/build.yml .github/workflows/python-publish.yml; do
-            [ -f "$wf" ] || { echo "❌ 缺少发布 workflow: $wf"; exit 1; }
-            echo "✅ 存在: $wf"
-          done
+          # 1) 发布 workflow 文件必须存在（P-007：tag 触发构建发包，PyPI 发布集成于 build.yml OIDC）
+          [ -f .github/workflows/build.yml ] || { echo "❌缺少发布 workflow: .github/workflows/build.yml"; exit 1; }
+          echo "✅ 存在: .github/workflows/build.yml"
           # 2) 触发条件校验：build.yml 必须由 tag push 触发
           grep -q "tags:" .github/workflows/build.yml || { echo "❌ build.yml 缺少 tag 触发条件"; exit 1; }
-          # 3) python-publish.yml 必须由 release published 触发
-          grep -q "release:" .github/workflows/python-publish.yml || { echo "❌ python-publish.yml 缺少 release 触发条件"; exit 1; }
-          echo "✅ 合并门禁通过：发布 workflow 存在且可触发（push tag → build / release → PyPI）"
+          # 3) PyPI 发布 job 必须集成于 build.yml（OIDC trusted publishing）
+          grep -q "pypi-publish" .github/workflows/build.yml || { echo "❌ build.yml 缺少 PyPI 发布 job"; exit 1; }
+          grep -q "gh-action-pypi-publish" .github/workflows/build.yml || { echo "❌ build.yml 缺少 PyPI 发布 action"; exit 1; }
+          echo "✅ 合并门禁通过：build.yml 存在且可触发（push tag → build + PyPI OIDC 发布）"

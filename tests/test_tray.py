@@ -10,6 +10,36 @@ import json
 from ghlink import tray
 
 
+class _FakeIcon:
+    """pystray.Icon 替身：run/stop 直接返回，不真起事件循环（CI 无 GUI）。"""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def run(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+def _mock_tray_ready(monkeypatch, platform: str, autostart: bool = True) -> None:
+    """mock 托盘启动前置：pystray 依赖 + 状态函数 + 值守已启用。
+
+    CI 无 pystray 依赖时 tray.pystray 为 None，需整体替换（不能 setattr(None, ...)）。
+    """
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
+    monkeypatch.setattr(tray.sys, "platform", platform)
+    monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+    monkeypatch.setattr(tray, "pystray", type("FakePystray", (), {"Icon": _FakeIcon})())
+    monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
+    monkeypatch.setattr(tray, "_status_text", lambda: "")
+    monkeypatch.setattr(tray, "_build_menu", lambda: None)
+    monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)  # 跳过自动 enable
+    monkeypatch.setattr(tray.service, "_is_autostart", lambda: autostart)
+
+
 def test_tray_guard_no_dependency(monkeypatch):
     """无 pystray 依赖 → 返回 2（提示安装）。"""
     monkeypatch.setattr(tray, "HAS_TRAY", False)
@@ -47,10 +77,35 @@ def test_tray_no_instance_starts(monkeypatch):
 
     李工 14:40 Windows 闪退根因：onefile 双进程同名，tasklist 排除自身仍误判
     引导进程为已有实例 → 托盘启动即退出。改用命名互斥体后此场景不再误伤。
+    v0.4.24：darwin 已改走原生渲染（tray_macos），本用例改回 win32 pystray 路径。
     """
-    monkeypatch.setattr(tray, "HAS_TRAY", True)
+    _mock_tray_ready(monkeypatch, "win32")
+    monkeypatch.setattr(tray, "_ensure_enabled_sync", lambda: True)
+    # 无实例时不提前退出：main() 应走到 icon.run()（FakeIcon 直接返回）后返回 0
+    assert tray.main() == 0
+
+
+def test_tray_darwin_pystray_render(monkeypatch):
+    """v0.4.25（顾笙 11:39 A/B 实锤）：0.4.24 tray_macos.py 渲染 bug（图标屏幕外），
+    回退 pystray 公共路径；darwin 启动时自动注册 LaunchAgent（刀①），不阻塞启动。
+    """
+    _mock_tray_ready(monkeypatch, "darwin")
+    assert tray.main() == 0
+    monkeypatch.setattr(tray, "_build_menu", lambda: None)
+    monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)
+    assert tray.main() == 0
+
+
+def test_tray_darwin_autoregister_launchagent(monkeypatch):
+    """v0.4.25（李工 11:34 反馈：退出后双击 APP 起不来）：darwin 启动时若未注册
+    LaunchAgent 则自动注册（刀①，幂等），保证「双击 APP 启动过 → 下次登录自启」。"""
+    calls = []
     monkeypatch.setattr(tray.sys, "platform", "darwin")
+    monkeypatch.setattr(tray, "HAS_TRAY", True)
     monkeypatch.setattr(tray.service, "_tray_single_instance", lambda: False)
+    monkeypatch.setattr(tray.service, "_is_autostart", lambda: False)
+    monkeypatch.setattr(tray.service, "_enable_autostart", lambda: calls.append(True) or True)
 
     class _FakeIcon:
         def __init__(self, *a, **k):
@@ -62,15 +117,14 @@ def test_tray_no_instance_starts(monkeypatch):
         def stop(self):
             pass
 
-    # CI 无 pystray 依赖时 tray.pystray 为 None，需整体替换（不能 setattr(None, ...)）
     monkeypatch.setattr(tray, "pystray", type("FakePystray", (), {"Icon": _FakeIcon})())
     monkeypatch.setattr(tray, "_make_icon", lambda *a, **k: None)
     monkeypatch.setattr(tray, "_status_text", lambda: "")
     monkeypatch.setattr(tray, "_build_menu", lambda: None)
     monkeypatch.setattr(tray, "_poll", lambda icon, **k: None)
-    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)  # 跳过自动 enable
-    # 无实例时不提前退出：main() 应走到 icon.run()（FakeIcon 直接返回）后返回 0
+    monkeypatch.setattr(tray.service, "_is_enabled", lambda: True)
     assert tray.main() == 0
+    assert calls, "darwin 未注册 LaunchAgent 时应自动注册"
 
 
 def test_status_text(tmp_path, monkeypatch):

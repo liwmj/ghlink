@@ -17,7 +17,7 @@ from typing import Any, Dict
 # pystray 依赖可选：核心零依赖，安装包内注入（PyInstaller datas / brew deps）
 from typing import Any as _Any
 
-from . import service, state
+from . import __version__, platform_adapter, service, state
 
 HAS_TRAY = False
 try:
@@ -35,10 +35,12 @@ except Exception:  # pragma: no cover - 未装依赖时
     ImageDraw = None
     HAS_TRAY = False
 
-# 状态 → 图标颜色（绿=正常 / 黄=切换验证中 / 红=降级 / 灰=值守停用）
+# 状态 → 图标颜色（v0.4.8 李工 20:28 拍板）
+# 灰=值守未启用（最高优先）｜值守启用时：红=degraded、黄=切换验证中、蓝=正常未自启动、绿=正常+自启动
 _COLOR = {
-    "normal": "#34C759",  # 绿=值守启用且正常（李工 12:58 定规：绿=值守启用）
-    "idle": "#007AFF",  # 蓝=正常但值守未启用（区别于绿）
+    "normal": "#34C759",  # 绿=值守启用且正常+开机自启动
+    "idle": "#007AFF",  # 蓝=值守启用且正常，但未开机自启动
+    "disabled": "#8E8E93",  # 灰=值守未启用（停用态，最高优先）
     "verifying": "#FFD60A",  # 黄=切换/验证中
     "switching": "#FFD60A",
     "degraded": "#FF3B30",  # 红=异常
@@ -100,8 +102,15 @@ def _state_path() -> str:
             with open(cfg_path, encoding="utf-8") as f:
                 cfg = _json.load(f)
             st_path = cfg.get("state_file", "ghlink_status.json")
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback, time as _t
+            try:
+                with open("/tmp/ghlink-tray-err.log", "a") as _f:
+                    _f.write("[" + _t.strftime("%H:%M:%S") + "] tray darwin native error: " + repr(e) + "\n")
+                    traceback.print_exc(file=_f)
+            except Exception:
+                pass
+            print("[ghlink] tray darwin native error:", repr(e), file=sys.stderr)
     return st_path
 
 
@@ -145,7 +154,8 @@ def _status_text() -> str:
     st = _load_state()
     s = st.get("state", "normal")
     txt = _TEXT.get(s, s)
-    return f"状态: {txt} ｜ {service._watch_status_text()}"
+    # v0.4.10（李工 22:53 需求）：第一行状态文本加版本号，一眼确认版本
+    return f"ghlink v{__version__} ｜ 状态: {txt} ｜ {service._watch_status_text()}"
 
 
 def _make_icon(color: str, size: int = 64):
@@ -186,36 +196,51 @@ def _make_icon(color: str, size: int = 64):
 
 
 def _state_color() -> str:
-    """状态灯四色判定（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+    """状态灯判定（v0.4.8 李工 20:28 拍板）：灰=值守未启用（最高优先）；
+    值守启用时：红=degraded > 黄=切换中 > 蓝=正常未自启动 > 绿=正常+自启动。
 
     v0.2.19（李工 8 条④）：初始图标与 _refresh 共用此判定，不再各自为政——
     修复 Windows 托盘启动瞬间「绿角标+菜单未运行」不匹配（原 main() 只看 state
     映射，没判断值守是否启用）。
+    v0.4.8（李工 20:28）：值守未启用时优先显示灰（停用态），不显示状态残留；
+    蓝/绿区分自启动——蓝=值守正常但未开机自启动，绿=值守正常+开机自启动。
     """
     st = _load_state()
     s = st.get("state", "normal")
     watching = service._is_enabled()
+    if not watching:
+        return _COLOR["disabled"]  # 灰=值守未启用（最高优先，不看状态残留）
     if s in ("degraded",):
-        return _COLOR["degraded"]  # 异常红（最高优先）
+        return _COLOR["degraded"]  # 异常红
     if s in ("verifying", "switching"):
         return _COLOR["verifying"]  # 切换/验证中黄
-    if watching:
-        return _COLOR["normal"]  # 值守启用且正常绿
-    return _COLOR["idle"]  # 正常但值守未启用蓝
+    if service._is_autostart():
+        return _COLOR["normal"]  # 值守正常+开机自启动绿
+    return _COLOR["idle"]  # 值守正常但未开机自启动蓝
 
 
 def _refresh(icon: Any) -> None:
     """定时刷新：状态文件 → 图标颜色 + 菜单文字。
 
     状态灯四色（李工 13:03 定规）：红=异常 > 黄=切换中 > 绿=值守启用 > 蓝=正常未启用。
+
+    v0.4.17（李工 Windows 反馈「菜单热点丢失」）：原实现每 5 秒全量重建菜单
+    （icon.menu = _build_menu() + update_menu()），鼠标悬停时菜单被重建 →
+    热点消失，看似崩溃。改为：仅在状态（颜色/值守/自启/文案）变化时才重建。
     """
-    color = _state_color()
     try:
+        color = _state_color()
+        watching = service._is_enabled()
+        autostart = service._is_autostart()
+        status = _status_text()
+        key = (color, watching, autostart, status)
+        if getattr(icon, "_ghlink_menu_key", None) == key:
+            return  # 状态无变化：不重建菜单，保住热点
         icon.icon = _make_icon(color)
-        icon.title = _status_text()
-        # 重建菜单（值守开关状态同步）
+        icon.title = status
         icon.menu = _build_menu()
         icon.update_menu()
+        icon._ghlink_menu_key = key
     except Exception:
         pass
 
@@ -237,9 +262,21 @@ def _cli_command(subcmd: str) -> list:
         # 兜底：frozen 但找不到 ghlink.exe（异常环境），退回当前解释器 + -m
     # v0.4.6（顾笙 13:57 根因）：非 frozen 环境优先找 ghlink 可执行文件，
     # 对齐 sudoers 放行路径（macOS venv: .venv/bin/ghlink；Windows: Scripts/ghlink.exe）
+    # v0.4.23（赛博根因 2026-08-26）：GUI 应用（Finder/LaunchServices 双击）PATH 只有
+    # /usr/bin:/bin:/usr/sbin:/sbin，shutil.which 找不到 /usr/local/bin/ghlink → 退回
+    # python -m 不匹配 sudoers NOPASSWD → 提权失败（与 08-25 卸载弹密码同病根）。
+    # v0.4.25：统一复用 service._find_wrapper()（含 .app 绝对路径，SonarCloud 消重）。
+    # ⚠️ v0.4.27 回归修复（李工 13:40 实测：值守关不掉/权限不足）：_find_wrapper()
+    # 优先 .app 内 wrapper（/Applications/ghlink.app/...），但 sudoers NOPASSWD 放行
+    # 的是 /usr/local/bin/ghlink——提权走 .app 路径不匹配白名单 → sudo 要密码 →
+    # 权限不足。提权命令必须与 sudoers 放行路径对齐（/usr/local/bin 优先），
+    # .app wrapper 只用于 LaunchAgent 启动（_enable_autostart），两职责分离。
     import shutil as _shutil
 
+    # 提权路径（sudoers NOPASSWD 放行）优先：/usr/local/bin → /opt/homebrew/bin
     for cand in (
+        "/usr/local/bin/ghlink",  # Intel macOS 安装位（sudoers 放行路径）
+        "/opt/homebrew/bin/ghlink",  # Apple Silicon macOS 安装位
         os.path.join(os.path.dirname(sys.executable), "ghlink"),  # venv/bin/ghlink
         os.path.join(os.path.dirname(sys.executable), "ghlink.exe"),  # Windows Scripts
     ):
@@ -261,10 +298,15 @@ def _run_privileged(subcmd: str) -> bool:
     """
     cmd = _cli_command(subcmd)
     try:
-        if sys.platform == "win32" and not service._is_admin():
+        if sys.platform == "win32" and not platform_adapter._is_admin():
             import ctypes
 
-            params = " ".join(f'"{a}"' for a in cmd)
+            # v0.4.17（李工 Windows 反馈「无法开启值守」）：ShellExecuteW 的
+            # lpParameters 只能传参数，不能包含 exe 本身——原实现把整个 cmd
+            # （含 ghlink.exe 路径）拼进 params，提权进程 argv 变成
+            # [ghlink.exe, <exe路径>, "enable"] → main.py 把 exe 路径当 config
+            # 解析 → enable 根本没执行。只传 cmd[1:]（子命令部分）。
+            params = " ".join(f'"{a}"' for a in cmd[1:])
             ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", cmd[0], params, None, 1)
             return ret > 32
         import os as _os
@@ -310,6 +352,14 @@ def _quit_tray(icon: Any, item: Any) -> None:
     except Exception:
         pass
     icon.stop()
+    # v0.5.3（顾笙 19:41 定位：退出托盘后 PID 锁残留死 PID，干扰下次双击重定向）：
+    # 退出时清理 PID 文件（~/.ghlink/ghlink-tray.pid），避免残留锁误导单实例判定
+    try:
+        _pid_file = service._tray_pid_file()
+        if os.path.exists(_pid_file):
+            os.unlink(_pid_file)
+    except Exception:
+        pass
 
 
 def _toggle_autostart(icon: Any, item: Any) -> None:
@@ -334,13 +384,17 @@ def _toggle_autostart(icon: Any, item: Any) -> None:
                         if service._is_enabled():
                             break
                         time.sleep(0.5)
-                    msg = (
-                        "开机自启动已开启，值守已启用"
-                        if service._is_enabled()
-                        else "开机自启动已开启（值守启用中）"
-                    )
+                    if service._is_enabled():
+                        msg = "开机自启动已开启，值守已启用"
+                    else:
+                        # v0.4.19（李工 21:52 拍板）：值守没真正起来 → 回滚自启动，
+                        # 不留「自启动开、值守没开」的半开假状态
+                        service._disable_autostart()
+                        msg = "开机自启动开启失败：值守无法启用（权限不足？）"
                 else:
-                    msg = "开机自启动已开启（值守启用失败，可点菜单启用）"
+                    # v0.4.19（李工 21:52 拍板）：enable 提权失败 → 整体回滚
+                    service._disable_autostart()
+                    msg = "开机自启动开启失败：值守无法启用（权限不足？）"
             else:
                 msg = "开启失败"
         _notify(icon, msg)
@@ -482,7 +536,9 @@ def _build_menu():
     # v0.4.6（李工 13:56 拍板）：自启动=值守总开关——
     # 自启动开启时值守锁定为启用态，「关闭值守」置灰（不可点），
     # 「启用值守」勾选显示开启；自启动关闭时菜单自由操作。
-    locked_on = autostart
+    # v0.4.19（李工 21:52 拍板）：locked_on 需值守真实在跑——自启动开但
+    # 值守没起来（enable 失败回滚场景）时菜单显示真实状态、可手动重试，不假绿
+    locked_on = autostart and watching
     return pystray.Menu(
         pystray.MenuItem(lambda _: _status_text(), None, enabled=False),
         pystray.MenuItem(
@@ -491,11 +547,7 @@ def _build_menu():
             # v0.2.17（李工 21:45 反馈）：去掉 default——左键右键都弹菜单，
             # 只有点击菜单里的 IP 项才复制（default=True 时左键单击直接复制）
         ),
-        pystray.MenuItem(
-            lambda _: f"值守: {'运行中' if watching else '未运行'}",
-            None,
-            enabled=False,
-        ),
+        # v0.4.8（李工 20:21）：删独立值守行——第一行综合状态已含值守信息，不重复
         pystray.Menu.SEPARATOR,
         # v0.4.5（李工需求）：托盘菜单直接操作值守开关。
         # v0.4.6（李工拍板）：自启动开启时「关闭值守」置灰+「启用值守」勾选，
@@ -506,9 +558,11 @@ def _build_menu():
             checked=lambda _: watching or locked_on,
             enabled=lambda _: not (watching or locked_on),
         ),
+        # v0.4.8（李工 20:21）：补 checked 互斥勾选——值守停止时「关闭值守」打勾
         pystray.MenuItem(
             "关闭值守",
             _disable_watch,
+            checked=lambda _: not (watching or locked_on),
             enabled=lambda _: watching and not locked_on,
         ),
         pystray.Menu.SEPARATOR,
@@ -608,6 +662,155 @@ def main() -> int:
     except Exception:
         pass
 
+    # v0.4.24（李工 03:41 实测定案）：macOS 弃用 pystray——0.19.5（2023-09 停更）
+    # 在 macOS 26.6.2 上进程存活但 NSStatusItem 菜单栏图标不渲染；改用 vendored
+    # PyObjC 原生渲染（tray_macos.py）。Windows 保持 pystray（正常）。
+    # v0.4.25（顾笙 11:39 A/B 实锤推翻）：0.4.24 tray_macos.py 有实现 bug——
+    # 菜单栏项创建了但图标坐标 (-1,1087) 屏幕外；0.4.23 pystray 反而正常 (940,3)，
+    # 纯 PyObjC 最小渲染测试也成功 → 是 tray_macos.py 实现问题，非 pystray/环境。
+    # 回退：darwin 也走下方公共 pystray 路径（0.4.23 验证正常），
+    # tray_macos.py 保留文件但本轮不启用，修复单独排期。
+    # darwin 额外：⑤ v0.4.25（李工 11:34 反馈：退出后双击 APP 起不来）——
+    # 托盘自启 = LaunchAgent（用户会话），安装器不注册 → 进程退出后无机制拉起。
+    # 启动时若未注册则自动注册（幂等），保证「双击 APP 启动过 → 下次登录自启」。
+    if sys.platform == "darwin":
+        try:
+            # v0.5.2（拂晓 16:50 五刀②）：用户显式取消过自启 → 不再自动注册（意愿持久化标记）
+            if not service._is_autostart() and not service._autostart_disabled():
+                service._enable_autostart()
+        except Exception:
+            pass
+        # v0.5.x（李工 14:36「装两个文件离谱」收敛）：手动安装 = 拖一个 dmg/app，
+        # 系统组件（软链 + sudoers + LaunchDaemon 模板）首启自动引导安装（一次性授权）。
+        try:
+            service._ensure_macos_system_components()
+        except Exception:
+            pass
+        # v0.5.2 刀① + v0.5.3 双击兜底（李工 19:11/19:35 实测：退出托盘→双击 / 取消自启→双击
+        # 都启动不了）：LaunchServices 双击链路图标落屏幕外 (-1,1108)；LaunchAgent 脚本路径
+        # 渲染正常 (901,3)。双击启动（非 LaunchAgent 拉起）→ 无条件确保 LaunchAgent 在跑：
+        #   ① 标记不拦手动打开：未注册时直接注册（哪怕用户取消过自启，双击=本次要托盘）
+        #   ② la_pid in (None, 0) 都走 bootstrap 兜底
+        #   ③ bootstrap 失败（exit 5: job 已加载但 not running）→ 先 bootout 清残留定义再 bootstrap
+        #   ④ kickstart -k 拉起后验证 LaunchAgent 真的在跑；失败不 return 0 → 直接前台渲染保底
+        try:
+            import subprocess as _sp
+            import time as _time
+
+            # v0.5.8（李工 01:21 实测定案：开启自启后重启不启动）：LaunchAgent RunAtLoad
+            # 首启时 launchctl print 可能尚未写入自身 pid（异步）→ _launchagent_pid() 返回
+            # None → None != os.getpid() 误判「双击进程」→ 走进重定向块 → bootout/bootstrap
+            # 自己折腾自己 → 验证到新实例 → return 0 自杀 → 托盘没了。
+            # 修复：用 XPC_SERVICE_NAME 精确区分启动来源——LaunchAgent 拉起 = com.ghlink.tray
+            # （实测确认），LaunchServices 双击 = application.*。XPC 匹配 LaunchAgent 时
+            # 跳过整个重定向逻辑（本该由 LaunchAgent 渲染，绝不重定向自杀）。
+            _xpc = os.environ.get("XPC_SERVICE_NAME", "")
+            _la_launched = _xpc == "com.ghlink.tray" or _xpc.startswith("com.ghlink.tray.")
+            if not _la_launched:
+                la_pid = service._launchagent_pid()
+                if la_pid != os.getpid():
+                    plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
+                # ① 无条件注册（双击主动打开：标记只管开机自启，不管手动打开）
+                if not os.path.exists(plist):
+                    service._write_tray_plist()
+                # ①.5 v0.5.3 实测补刀（20:35 顾笙机器侧实测）：用户取消过自启 →
+                # launchctl disable 状态残留，bootstrap/kickstart 对 disabled job 拉不起
+                # （双击进程直接落前台渲染 = LaunchServices 屏幕外 -1,1108，等于没兜住）。
+                # 双击主动打开必须反 disabled（enable 幂等）才能 bootstrap/kickstart。
+                _sp.run(
+                    ["launchctl", "enable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                    check=False,
+                    timeout=10,
+                )
+                # ①.6 v0.5.5（李工 20:58 实测定案：退出托盘→再双击无反应）：
+                # 写 redirecting 标记（自身 pid）——kickstart 拉起的新实例做单实例检查时
+                # 跳过该 pid，避免 A/B 并存期互判自杀（B 被误判「已有实例」即退）。
+                try:
+                    _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
+                    os.makedirs(os.path.dirname(_rd), exist_ok=True)
+                    with open(_rd, "w", encoding="utf-8") as _f:
+                        _f.write(str(os.getpid()))
+                except Exception:
+                    pass
+                try:
+                    # ② la_pid in (None, 0) 都走 bootstrap 兜底（0 值别漏过）
+                    if la_pid in (None, 0):
+                        r = _sp.run(
+                            ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+                        # ③ bootstrap 失败（exit 5: job 已加载但 not running）
+                        # → bootout 清残留定义再试
+                        if r.returncode != 0:
+                            _sp.run(
+                                ["launchctl", "bootout", f"gui/{os.getuid()}/com.ghlink.tray"],
+                                check=False,
+                                timeout=10,
+                            )
+                            _sp.run(
+                                ["launchctl", "bootstrap", f"gui/{os.getuid()}", plist],
+                                check=False,
+                                timeout=10,
+                            )
+                    _sp.run(
+                        [
+                            "launchctl",
+                            "kickstart",
+                            "-k",
+                            f"gui/{os.getuid()}/com.ghlink.tray",
+                        ],
+                        check=False,
+                        timeout=10,
+                    )
+                    # ④ 验证 LaunchAgent 真的拉起（bootstrap/kickstart 异步，最多等 ~5s）；
+                    # 失败 → 前台渲染保底（托盘必出）
+                    _la_ok = False
+                    for _ in range(10):
+                        _time.sleep(0.5)
+                        _p = service._launchagent_pid()
+                        if _p not in (None, 0, os.getpid()):
+                            _la_ok = True
+                            break
+                finally:
+                    # 清 redirecting 标记（无论成败/异常，A 使命结束）
+                    try:
+                        _rd = os.path.expanduser("~/.ghlink/redirecting.pid")
+                        if os.path.exists(_rd):
+                            os.unlink(_rd)
+                    except OSError:
+                        pass
+                    # ④.5 意愿恢复（v0.5.5 李工 22:04 实测定案：取消自启后 plist 残留 enabled →
+                    # 下次登录自启 = 关不掉；李工 22:10 再实测：关掉自启→退出托盘→再启动 APP →
+                    # 自启动又打开）。双击为了拉起临时重建 plist + enable，但用户取消过自启
+                    # （标记在）→ **无条件**恢复 disable + 删 plist——放在 finally 内，
+                    # 任何路径（正常/异常/超时）都执行，保证用户开关意愿不被双击行为篡改。
+                    # 本次托盘 KeepAlive 不中断，下次登录不自启（标记只管开机自启）。
+                    if service._autostart_disabled():
+                        _sp.run(
+                            ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                            check=False,
+                            timeout=10,
+                        )
+                        try:
+                            if os.path.exists(plist):
+                                os.unlink(plist)
+                        except OSError:
+                            pass
+                if _la_ok:
+                    print(
+                        "[ghlink] 双击启动 → 已重定向 LaunchAgent（脚本路径渲染）",
+                        file=sys.stderr,
+                    )
+                    return 0
+                print(
+                    "[ghlink] LaunchAgent 拉起失败，本次前台渲染（保底）",
+                    file=sys.stderr,
+                )
+        except Exception:
+            pass
+
     if not HAS_TRAY:  # pragma: no cover
         print(
             "[ghlink] 缺少托盘依赖（pystray/Pillow）。"
@@ -622,7 +825,21 @@ def main() -> int:
     # 误判引导进程为已有实例 → 托盘启动即退出。改用 _tray_single_instance()
     # （Windows 命名互斥体，macOS/Linux 保留 pgrep 排除自身）
     try:
-        if service._tray_single_instance():
+        # v0.5.5（赛博 21:41 竞态根因，李工 21:35 实测定案）：
+        # 退出→双击时 A（双击进程）写 redirecting.pid → kickstart 拉起 B →
+        # A 验证到 B 后立即清 redirecting.pid → return 0；但 B 启动到单实例检查
+        # 时 A 可能还没完全退出 ps 列表、标记已清 → B 误判 A 是已有实例 → B 自杀
+        # → 托盘没起来 = 无反应。LaunchAgent + kickstart -k 本身就保证唯一
+        # （kickstart 先杀旧实例再拉起），B 被 LaunchAgent 拉起（la_pid == 自身）
+        # 时直接跳过 pgrep 单实例检查，pgrep 只会误判。
+        _skip_single_check = False
+        if sys.platform == "darwin":
+            try:
+                if service._launchagent_pid() == os.getpid():
+                    _skip_single_check = True
+            except Exception:
+                pass
+        if not _skip_single_check and service._tray_single_instance():
             print(
                 "[ghlink] 托盘已在运行（单实例），本次启动退出。如需重启托盘请先退出旧实例。",
                 file=sys.stderr,
@@ -635,7 +852,23 @@ def main() -> int:
     _hide_dock_icon()
 
     # ⑤ v0.2.17：写托盘 PID 文件（存活判定用，detach 后 pgrep 不可靠）
+    # v0.5.12（李工 13:30 ARM 实测）：必须在 darwin 原生渲染路由之前写——
+    # 否则 HAS_NATIVE 分支 return _tray_macos.main() 提前退出 → PID 文件缺失 →
+    # _tray_alive() 误判「托盘未运行」（pgrep 兜底也匹配不到 PyInstaller 产物）
     service._write_tray_pid()
+
+    # v0.5.13（李工 09:54 ARM 实测）：macOS 启用 PyObjC 原生渲染（tray_macos.py）——
+    # 0.4.25 因实现 bug 回退 pystray 后未再启用；pystray 0.19.5 在 ARM/新系统
+    # 菜单栏图标不渲染（0.4.24 实锤）。button 渲染姿势已修（statusItem.button()），
+    # 现在接回 darwin 分支：HAS_NATIVE（PyObjC 在包内）时原生渲染，缺失则回退 pystray。
+    if sys.platform == "darwin":
+        try:
+            from . import tray_macos as _tray_macos
+
+            if _tray_macos.HAS_NATIVE:
+                return _tray_macos.main()
+        except Exception:
+            pass
 
     # v0.2.19（李工 8 条④）：初始图标与 _refresh 同款判定
     # （值守未启用→蓝，修复绿角标+菜单未运行不匹配）

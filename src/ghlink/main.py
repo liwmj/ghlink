@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """入口：单轮执行（调度粒度 1h（v0.2.18 起），由平台定时任务调用）。
 
 v0.2.19 流程变更（李工 8 条 ③⑥）：
@@ -80,6 +81,22 @@ def _cooldown_sec(cfg: Dict[str, Any]) -> int:
     return int(cfg.get("trigger", {}).get("cooldown_min", 15)) * 60
 
 
+def _fresh_dynamic_cache(st: Dict[str, Any]) -> Dict[str, list]:
+    """最近成功动态 IP 缓存（v0.4.3）：24h 新鲜窗口内返回缓存，超期返回空（防陈旧 IP）。"""
+    cached = st.get("last_dynamic_ips") or {}
+    cached_at = st.get("last_dynamic_at") or ""
+    if cached and cached_at:
+        try:
+            import time as _t
+
+            ct = _t.mktime(_t.strptime(cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
+            if 0 <= _t.time() - ct <= 86400:  # 24h 内
+                return cached
+        except Exception:
+            pass
+    return {}
+
+
 def _update_state(st: Dict[str, Any], **fields: Any) -> None:
     for k, v in fields.items():
         st[k] = v
@@ -144,7 +161,9 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
     webhook = cfg.get("notify", {}).get("feishu_webhook", "")
     notify_enabled = bool(cfg.get("notify", {}).get("enabled", True))
 
-    with lock.acquire(_lock_path(cfg, config_path)) as got:
+    with lock.acquire(
+        _lock_path(cfg, config_path), extra_roots=(_config_base(config_path),)
+    ) as got:
         if not got:
             # 已有实例在跑，本轮跳过（不阻塞不排队）
             return 0
@@ -188,18 +207,13 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
         if not ok_candidates or not entries:
             # v0.4.3（李工 8 bug 点④ macOS 真机验收）：动态失败时优先用最近成功值缓存
             # 兜底写核心域名段（复用动态历史值，非静态降级；超 24h 不写，避免陈旧 IP）
-            cached = st.get("last_dynamic_ips") or {}
-            cached_at = st.get("last_dynamic_at") or ""
-            cache_fresh = False
-            if cached and cached_at:
-                try:
-                    import time as _t
+            cached = _fresh_dynamic_cache(st)
+            if cached:
+                import time as _t
 
-                    ct = _t.mktime(_t.strptime(cached_at[:19], "%Y-%m-%dT%H:%M:%S"))
-                    cache_fresh = 0 <= _t.time() - ct <= 86400  # 24h 内
-                except Exception:
-                    cache_fresh = False
-            if cache_fresh:
+                ct = _t.mktime(
+                    _t.strptime((st.get("last_dynamic_at") or "")[:19], "%Y-%m-%dT%H:%M:%S")
+                )
                 block = hosts_manager.build_combined_block(cached, github520_entries)
                 ok_apply, backup_path = hosts_manager.apply_block(
                     block, _backup_dir(cfg, config_path)
@@ -260,6 +274,38 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             state.save(st_path, st)
             return 1
 
+        # ⑤ v0.4.18（冷却门控，李工/拂晓验收）：探测失败触发切换前检查冷却期——
+        # 距上次切换 < cooldown_min 时跳过切换（只累计失败计数，防频繁切换抖动）；
+        # config.py 注释「切换冷却 3 小时」设计意图是门控切换，此前只节流了告警（漏实现）
+        # v0.4.25（赛博根因 2026-08-26，顾笙实测）：已写入 IP 失效时**不受冷却限制**——
+        # 冷却只防频繁切换抖动，不拦失效 IP 修复（09:50 写入 20.205.243.166 已死，
+        # 冷却期内无人切 → GitHub 打不开不自愈）。当前生效 IP 探测失败 → 立即切换。
+        cooldown_sec = _cooldown_sec(cfg)
+        last_sw = st.get("last_switched_at", 0) or 0
+        cur_ip = st.get("current_ip") or ""
+        cur_ip_dead = False
+        if cur_ip:
+            try:
+                cur_ip_dead = not probe.probe_tcp_only(
+                    cur_ip, float(cfg.get("probe", {}).get("timeout_sec", 15))
+                ).get("ok", False)
+            except Exception:
+                cur_ip_dead = False
+        if not ok and last_sw and (time.time() - last_sw) < cooldown_sec and not cur_ip_dead:
+            st["state"] = "degraded"
+            st["last_error"] = "in cooldown after last switch, skip switch"
+            st["probe"]["consecutive_failures"] = (
+                st.get("probe", {}).get("consecutive_failures", 0) + 1
+            )
+            if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):
+                notifier.send(
+                    f"[ghlink] 切换冷却中（距上次切换 < {cooldown_sec // 60}min），本轮跳过",
+                    webhook,
+                )
+                notifier.mark_alerted(st)
+            state.save(st_path, st)
+            return 1
+
         # 4) 构建复合段落（动态段 + GitHub520 子段）并写入（内容无变化自动跳过）
         block = hosts_manager.build_combined_block(entries, github520_entries)
         st["state"] = "switching"  # 落盘前标记（提权 exit 前已落盘，见下）
@@ -294,8 +340,23 @@ def run(config_path: str = DEFAULT_CONFIG_FILE) -> int:
             verify_targets = [t for t in entries if t in core_targets] or list(entries.keys())
             st["state"] = "verifying"
             if not hosts_manager.verify_after_apply(verify_targets, timeout):
-                # P0-1: 自检失败 → 立即回滚 + degraded（坏配置绝不留场）
+                # P0-1: 自检失败 → 回滚动态段 + 保留/重建静态兜底段
+                # （李工 22:12 语义：回滚不清空 ghlink hosts，静态兜底 IP 保留；
+                #  卸载才彻底清理——回滚≠卸载）
                 hosts_manager.rollback(backup_path)
+                # v0.4.11（李工 22:53）：核心域名（动态段）也保留静态保底——
+                # 用 last_dynamic_ips 缓存（24h 新鲜窗口）写核心域名段，
+                # 非核心域名走 GitHub520 子段；坏 IP 已清、最近好 IP 保底，
+                # 缓存超 24h 才回退系统 DNS（防陈旧 IP）
+                dynamic_fallback = {
+                    k: v for k, v in _fresh_dynamic_cache(st).items() if k in core_targets and v
+                }
+                static_block = hosts_manager.build_combined_block(
+                    dynamic_fallback, github520_entries
+                )
+                hosts_manager.apply_block(
+                    static_block, _backup_dir(cfg, config_path), preserve_g520=True
+                )
                 st["state"] = "degraded"
                 st["last_error"] = "verify failed after apply, rolled back"
                 if notify_enabled and webhook and notifier.should_alert(st, _cooldown_sec(cfg)):

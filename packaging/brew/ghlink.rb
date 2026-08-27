@@ -5,14 +5,27 @@
 # 修复记录（赛博接口复核 2026-08-14）：
 # P1: 相对导入入口 —— 安装保持包结构 libexec/ghlink/，bin wrapper 用绝对导入
 # P2: service 块移除 —— 用户级 launchd 写 /etc/hosts 会失败，官方值守统一走 ghlink enable
+#
+# v0.4.7（赛博 2026-08-23，李工反馈 brew 停在 0.2.18）：
+# P3: 版本同步发版 —— url/sha256 必须随每次发版 bump（build.yml 已加 tap 自动同步校验）
+# P4: 卸载清理 —— Homebrew Formula 不支持 def uninstall 钩子（那是 Cask 机制），
+#     卸载后 etc/ghlink 残留由 ghlink uninstall 命令清理（见 caveats 第 5 条）
+#
+# v0.4.12（李工 2026-08-24 01:03 终裁 D1）：
+# P5: formula 退役 —— cask 单轨（brew install --cask ghlink），本 formula deprecate 保留追溯。
+#     卸载自动清理走 Cask 的 uninstall/zap 钩子（见 packaging/macos/Casks/ghlink.rb）
 
 class Ghlink < Formula
   desc "GitHub 链路自愈工具：主动监控连通性，异常时自动换 IP 写 hosts，自检回滚 + 多渠道告警"
   homepage "https://github.com/liwmj/ghlink"
-  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.2.8.tar.gz"
-  sha256 "65b01fb3f1fe05292c42345bad9f7504bd66173875c32d3d3de6b173c353c247"
+  url "https://github.com/liwmj/ghlink/archive/refs/tags/v0.4.13.tar.gz"
+  sha256 "d5aca9113600b404cc6ec6abc1c0877b3609b36a515098f52f246de813fd1ec9"
   license "MIT"
   head "https://github.com/liwmj/ghlink.git", branch: "master"
+
+  # v0.4.12（李工 01:03 终裁 D1）：cask 单轨，formula 退役。
+  # 请使用 brew install --cask ghlink（含 .app + 卸载自动清理）。
+  deprecate! date: "2026-08-24", because: "cask 单轨（v0.4.12 起），请使用 brew install --cask ghlink"
 
   depends_on "python@3.12"
 
@@ -56,7 +69,9 @@ class Ghlink < Formula
         2. 启用值守: sudo ghlink enable   （注册系统 LaunchDaemon，1 小时粒度，需 root 写 hosts）
         3. 查看状态: ghlink status
         4. 停用值守: sudo ghlink disable  （保留最后写入的 hosts IP 与配置，不再自动更新）
-        5. 卸载清理: sudo ghlink uninstall（停任务 + 还原 hosts + 删配置，v0.4.1 起）
+        5. 彻底卸载: sudo ghlink uninstall（停任务 + 还原 hosts + 删配置，v0.4.1 起）
+      卸载说明（v0.4.7）：brew uninstall 后运行 sudo ghlink uninstall 清理
+      #{etc}/ghlink 与 /var/lib/ghlink；v0.4.8 起 Cask 版卸载自动清理。
       默认不自启（opt-in），enable 后才注册定时任务。
       注意：值守需 root 权限（写 /etc/hosts），请用 sudo ghlink enable。
     EOS

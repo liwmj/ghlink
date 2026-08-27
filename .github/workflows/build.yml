@@ -3,7 +3,6 @@ name: Build ghlink
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 jobs:
   tag-format-check:
@@ -39,6 +38,29 @@ jobs:
           name: dist-python
           path: dist/
 
+  pypi-publish:
+    name: PyPI 发布（OIDC trusted publishing）
+    runs-on: ubuntu-latest
+    needs: [build-sdist]
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-python
+          path: dist/
+      - name: Publish to PyPI
+        # v0.5.12（李工 15:29 批）：线上已有完全相同的包（同文件名同 hash）时
+        # skip-existing 跳过不报错——比 continue-on-error 精准：仅容忍「文件已存在」，
+        # 其他错误（网络/凭证/真冲突）仍正常失败红。
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
   build-windows:
     name: Windows exe (PyInstaller + Inno)
     runs-on: windows-latest
@@ -56,7 +78,10 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
-          iscc packaging/windows/ghlink.iss
+          # v0.5.12（李工 08-27 定）：版本号注入 pyproject.toml 真值，根治 iss 硬编码 0.4.22
+          $ver = (Select-String -Path pyproject.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $ver) { Write-Error "pyproject.toml version 解析失败"; exit 1 }
+          iscc "/DMyAppVersion=$ver" packaging/windows/ghlink.iss
       - name: Rename installer asset
         shell: pwsh
         run: |
@@ -115,11 +140,97 @@ jobs:
         run: |
           python3 -m py_compile src/ghlink/*.py
           ruby -c packaging/brew/ghlink.rb
+      # v0.4.7（李工反馈 brew 停在 0.2.18）：发版时自动同步 formula 到 tap 仓库，
+      # 杜绝「Release 发了 brew 没跟进」的通道缺口（此前仅校验不推送）
+      - name: Sync formula to tap (homebrew-tap)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -e
+          TAP_REPO="liwmj/homebrew-tap"
+          TAG="${GITHUB_REF#refs/tags/}"
+          git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
+          cp packaging/brew/ghlink.rb "$RUNNER_TEMP/tap/Formula/ghlink.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "ghlink-bot"
+          git config user.email "ghlink@users.noreply.github.com"
+          git add Formula/ghlink.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync formula to ${TAG}"
+            git push origin HEAD:master
+          else
+            echo "formula 无变化，跳过"
+          fi
       - name: Smoke test
         run: |
           pip install .
           ghlink --version
           ghlink status
+
+  build-macos-pkg:
+    name: macOS dmg (vendored 传统模式)
+    runs-on: macos-latest
+    needs: [build-sdist]
+    if: startsWith(github.ref, 'refs/tags/v')
+    # v0.5.13 还原（李工 00:08 令）：放弃 PyInstaller 内嵌运行时（34.1MB 大包/塞 PyObjC 进包），
+    # 回到 v0.5.0~v0.5.11 传统 vendored 模式——build_dmg.sh 单 runner 内下载
+    # x86_64+arm64 双架构 wheel + lipo 合并 → universal dmg（Intel/ARM 都能跑），
+    # 不打包库进包，系统 brew python@3.14 跑 vendored 依赖。macos-latest 单 runner 即可。
+    outputs:
+      sha256: ${{ steps.sha.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Build dmg (vendored universal)
+        id: sha
+        run: |
+          pip install --only-binary :all: ds-store==1.3.3
+          VERSION=${GITHUB_REF_NAME#v} bash packaging/macos/build_dmg.sh
+          DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
+          echo "sha256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-dmg
+          path: dist/macos/
+
+  sync-cask:
+    name: Sync Cask to tap (homebrew-tap)
+    runs-on: ubuntu-latest
+    needs: [build-macos-pkg]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync Cask (单 sha256)
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          SHA256: ${{ needs.build-macos-pkg.outputs.sha256 }}
+        run: |
+          set -e
+          TAP_REPO="liwmj/homebrew-tap"
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ -z "$SHA256" ]; then
+            echo "!! sha256 为空，跳过 sync 防坏 tap"
+            exit 0
+          fi
+          git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          sed -i "s/REPLACE_WITH_DMG_SHA256/${SHA256}/" packaging/macos/Casks/ghlink.rb
+          sed -i "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
+          cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "ghlink-bot"
+          git config user.email "ghlink@users.noreply.github.com"
+          git add Casks/ghlink.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync cask to ${TAG}"
+            git push origin HEAD:master
+          else
+            echo "cask 无变化，跳过"
+          fi
 
   macos-smoke:
     name: macOS real-machine smoke (hosts switch/rollback)
@@ -138,7 +249,7 @@ jobs:
 
   release:
     name: Attach to GitHub Release
-    needs: [build-sdist, build-windows, build-linux]
+    needs: [build-sdist, build-windows, build-linux, build-macos-pkg]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 创建/更新 Release + 附件需要写权限
@@ -147,15 +258,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2.2.1
         with:
+          # v0.5.2（五刀⑤）：files 去重——v0.5.0/v0.5.1 曾因 glob 重复匹配 + release 刚创建
+          # 不可发现导致 asset 元数据更新 404（Not Found）卡 draft。升级 v2.2.1（修复竞态）+ 精确匹配。
           files: |
-            artifacts/**/*.whl
-            artifacts/**/*.tar.gz
-            artifacts/**/*.exe
-            artifacts/**/*.deb
+            artifacts/dist-python/*.whl
+            artifacts/dist-python/*.tar.gz
+            artifacts/dist-windows/*.exe
+            artifacts/dist-macos-dmg/*.dmg
+            artifacts/dist-macos/*.pkg
+            artifacts/dist-linux/*.deb
             artifacts/apt-repo/Packages.gz
             artifacts/apt-repo/Release
+          fail_on_unmatched_files: false
           generate_release_notes: true
 
   deploy-pages:

@@ -67,7 +67,8 @@ class TestDomainHealth:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -123,7 +124,8 @@ class TestDomainHealth:
         monkeypatch.setattr("ghlink.probe.probe_all", flaky)
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -146,7 +148,8 @@ class TestDomainHealth:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -164,7 +167,10 @@ class TestDomainHealth:
         但 github520 静态段保留兜底（本测试 mock github520 为空，聚焦动态段语义；
         静态段兜底由 test_h006 覆盖）。
         """
-        cfg_path = make_config(tmp_path)
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         # 核心域名失败触发切换，codeload 已降级
         monkeypatch.setattr(
             "ghlink.probe.probe_all",

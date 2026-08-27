@@ -36,7 +36,12 @@ def make_config(tmp_path, **overrides):
 class TestFullCycle:
     def test_e001_persistent_failure_triggers_and_recovers(self, tmp_path, monkeypatch):
         """持续失败 3 轮 → 触发切换 → 后续恢复。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {
@@ -45,7 +50,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -65,7 +71,12 @@ class TestFullCycle:
         v0.2.19（李工 8 条③）：正常态也写 hosts（段落常新），applied 非空是预期；
         「不触发」= history 无 consecutive failures 触发、计数清零。
         """
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         calls = {"n": 0}
 
         def flaky_probe(targets, timeout):
@@ -98,7 +109,12 @@ class TestFullCycle:
         v0.4.0（李工 12:35 点 1/点 2）：动态失败不再什么都不写——github520 静态段
         兜底写入（含核心域名，预检过排前），保证首装/断网场景 hosts 有可用条目。
         """
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {
@@ -127,7 +143,12 @@ class TestFullCycle:
 
     def test_e004b_all_sources_fail_no_fallback_keeps_degraded(self, tmp_path, monkeypatch):
         """全源失败且无 github520 兜底 → 不写 + 告警 + degraded（宁缺毋滥保留）。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {
@@ -151,7 +172,12 @@ class TestFullCycle:
 
     def test_e005_cooldown_no_repeat_alert(self, tmp_path, monkeypatch):
         """冷却期内重复失败 → 不重复切换、不重复告警。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {
@@ -160,7 +186,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         alerts = []
         monkeypatch.setattr(
@@ -172,7 +199,12 @@ class TestFullCycle:
 
     def test_e007_alert_failure_not_blocking(self, tmp_path, monkeypatch):
         """webhook 挂掉 → 自愈流程照常完成。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {
@@ -181,7 +213,8 @@ class TestFullCycle:
         )
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr("ghlink.notifier.send", lambda message, url: False)  # 告警失败
         code = main.run(cfg_path)
@@ -189,7 +222,12 @@ class TestFullCycle:
 
     def test_e008_degraded_recovers_when_probe_ok(self, tmp_path, monkeypatch):
         """Bug E：degraded 状态 + 探测成功 → 回绿 normal（不再卡死）。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         # 预置 degraded 状态文件
         st = {
             "schema_version": 2,
@@ -216,7 +254,8 @@ class TestFullCycle:
         # 补 mock 保证确定性：v0.2.19 正常态也写 hosts，全部打桩。
         monkeypatch.setattr("ghlink.resolver.resolve_best", lambda domain, cfg: ["1.2.3.4"])
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         monkeypatch.setattr(
             "ghlink.hosts_manager.verify_after_apply", lambda targets, timeout: True
@@ -258,7 +297,8 @@ class TestFullCycle:
             lambda domain, cfg: ["1.2.3.4"] if "fastly" not in domain else ["5.6.7.8"],
         )
         monkeypatch.setattr(
-            "ghlink.hosts_manager.apply_block", lambda block, backup_dir: (True, backup_dir)
+            "ghlink.hosts_manager.apply_block",
+            lambda block, backup_dir, preserve_g520=True: (True, backup_dir),
         )
         # 关键断言：verify 收到的 targets 只含 core_targets（不含 fastly）
         verify_calls = []
@@ -277,7 +317,12 @@ class TestFullCycle:
 
     def test_privilege_failure_state_saved(self, tmp_path, monkeypatch):
         """提权失败路径：state 仍落盘当前状态（switching 标记不丢），不静默（赛博复核提醒 2）。"""
-        cfg_path = make_config(tmp_path)
+        # v0.4.18（冷却门控）：该测试聚焦「连续失败触发切换」链路，不测冷却——
+        # 显式关冷却（cooldown_min=0），冷却语义由 linux_smoke ⑤ 覆盖
+        cfg_path = make_config(
+            tmp_path,
+            trigger={"consecutive_failures": 3, "cooldown_min": 0, "verify_success_rounds": 2},
+        )
         monkeypatch.setattr(
             "ghlink.probe.probe_all",
             lambda targets, timeout: {

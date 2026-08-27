@@ -15,9 +15,53 @@ import os
 import shutil
 import sys
 import time
+from typing import Optional
 
 from . import hosts_manager, platform_adapter, state
 from .lock import _pid_alive  # v0.2.17 ⑤：PID 文件兜底存活判定
+
+# v0.4.25（SonarCloud S1192）：ghlink 安装路径常量——多处（wrapper 候选/sudoers
+# 模板/PYTHONPATH）共用，防字面量重复超标。
+_GHLINK_APP_WRAPPER = "/Applications/ghlink.app/Contents/MacOS/ghlink"
+_GHLINK_APP_LIBEXEC = "/Applications/ghlink.app/Contents/libexec"
+_GHLINK_BIN = "/usr/local/bin/ghlink"
+_GHLINK_HOMEBREW_BIN = "/opt/homebrew/bin/ghlink"
+_GHLINK_USR_BIN = "/usr/bin/ghlink"
+
+
+def _wrapper_candidates() -> tuple:
+    """ghlink wrapper 候选路径（含 .app 绝对路径，GUI/launchd PATH 受限场景兜底）。
+
+    v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 应用（Finder/LaunchServices 双击）
+    PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，且 relocate 事故后 /usr/local/bin/ghlink
+    软链会断——候选列表必须含 .app 内绝对路径，且四处（_python_cmd/_find_wrapper/
+    _macos_daemon_command）共用，防 SonarCloud 重复率超标。
+    """
+    return (
+        _GHLINK_APP_WRAPPER,
+        _GHLINK_BIN,
+        _GHLINK_HOMEBREW_BIN,
+        _GHLINK_USR_BIN,
+    )
+
+
+def _find_wrapper() -> Optional[str]:
+    """返回第一个存在的 wrapper 绝对路径；无则 which 兜底。
+
+    darwin：.app 内绝对路径优先（GUI/launchd PATH 受限 + relocate 软链断场景，
+    v0.4.25 赛博根因）；其他平台：which 优先（保持 v0.2.17 原语义）。
+    """
+    if sys.platform == "darwin":
+        for cand in _wrapper_candidates():
+            if os.path.exists(cand):
+                return cand
+    w = shutil.which("ghlink")
+    if w:
+        return w
+    for cand in _wrapper_candidates():
+        if os.path.exists(cand):
+            return cand
+    return None
 
 
 def _python_cmd() -> str:
@@ -34,10 +78,10 @@ def _python_cmd() -> str:
         watch = os.path.join(exe_dir, "ghlink-watch.exe")
         if os.path.exists(watch):
             return f'"{watch}"'
-    # 优先 PATH 里的 wrapper（brew/deb 安装均落 bin）
-    for cand in (shutil.which("ghlink"), "/usr/local/bin/ghlink", "/usr/bin/ghlink"):
-        if cand and os.path.exists(cand):
-            return f'"{cand}"'
+    # 优先 wrapper（含 .app 绝对路径，GUI/launchd PATH 受限场景兜底）
+    w = _find_wrapper()
+    if w:
+        return f'"{w}"'
     # 开发模式回退：裸 python -m（源码/venv 环境 PYTHONPATH 天然可用）
     py = sys.executable or "python3"
     return f'"{py}" -m ghlink.main'
@@ -221,9 +265,16 @@ def _ensure_config() -> None:
 
     cfg_path = _config_path()
     if not os.path.exists(cfg_path):
-        # 候选模板：当前目录 / 仓库 / 安装包 libexec / 系统 share（v0.2.19 补 /opt/homebrew）
+        # 候选模板：当前目录 / 包内（wheel 内置 v0.5.9）/ 仓库 / 安装包 libexec / 系统 share
         candidates = [
             os.path.join(os.getcwd(), "config.example.json"),
+            # v0.5.10（拂晓 02:03 Linux 预检 blocker ③）：wheel 已内置 config.example.json
+            # （package-data），但候选列表缺包内路径 dirname(__file__) → pip 场景模板搜不到
+            # → enable 报「找不到模板跳过配置落位」。补包内路径，pip 装后可直接命中。
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "config.example.json",
+            ),
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "config.example.json",
@@ -344,19 +395,117 @@ def disable() -> int:
         return 2
 
 
+# v0.4.14：二进制缺失时手动清理指引（_uninstall_self_elevate 使用）
+_MANUAL_CLEANUP_STEPS = (
+    "sudo rm -f /etc/sudoers.d/ghlink",
+    "sudo launchctl bootout system /Library/LaunchDaemons/com.ghlink.plist "
+    "2>/dev/null; sudo rm -f /Library/LaunchDaemons/com.ghlink.plist",
+    "sudo sed -i '' '/# ghlink Start/,/# ghlink End/d' /etc/hosts",
+    "sudo rm -rf /usr/local/etc/ghlink /opt/homebrew/etc/ghlink ~/.ghlink /var/lib/ghlink",
+)
+
+
+def _uninstall_self_elevate() -> Optional[int]:
+    """非 root 时以 sudo 重跑本命令（root 后正常执行，无死循环）。
+
+    返回退出码；已是 root（无需提权）返回 None。"""
+    if os.name != "posix" or not hasattr(os, "geteuid") or os.geteuid() == 0:
+        return None
+    import subprocess as _sp
+
+    # v0.4.15（验收发现）：brew 子进程 PATH 下 which 失败、python -m 使 argv[0]
+    # 变成 main.py 路径——均不匹配 sudoers NOPASSWD → 确定性候选列表找 wrapper
+    # v0.4.25：统一走 _find_wrapper()（含 .app 绝对路径，GUI/launchd PATH 受限兜底）
+    exe = _find_wrapper()
+    # v0.4.14（review 建议）：绝对路径 /usr/bin/sudo 收 PATH 注入面；
+    # 二进制已删（卸载中途/手动清理场景）时给出手动清理指引，不静默失败
+    if not exe or not os.path.exists(exe):
+        print(
+            "[ghlink] 未找到 ghlink 可执行文件（可能已被移除），无法自动卸载。请手动清理以下残留：",
+            file=sys.stderr,
+        )
+        for step in _MANUAL_CLEANUP_STEPS:
+            print(f"  {step}", file=sys.stderr)
+        return 2
+    try:
+        # v0.5.9（李工 01:21 实测：brew uninstall 通过 /usr/bin/env 管道调 ghlink uninstall，
+        # 非 TTY 环境下 sudo 读不到密码 → 卸载失败）。优先 sudo（TTY 正常交互/已有 NOPASSWD
+        # 窄放行免密）；失败时回退 osascript 授权弹窗（GUI 弹窗点密码，不依赖 TTY）。
+        r = _sp.run(["/usr/bin/sudo", exe, "uninstall"], check=False)  # NOSONAR
+        if r.returncode == 0:
+            return 0
+        # sudo 失败（非 TTY 密码不可达 / 无 NOPASSWD）→ osascript 管理员弹窗重跑
+        import sys as _sys
+
+        if _sys.platform == "darwin":
+            try:
+                _script = (
+                    'do shell script "'
+                    + exe.replace('"', '\\"')
+                    + ' uninstall" with administrator privileges'
+                )
+                r2 = _sp.run(
+                    ["osascript", "-e", _script],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if r2.returncode == 0:
+                    return 0
+                print(
+                    f"[ghlink] 卸载授权失败（用户取消或错误）: {r2.stderr.strip()}",
+                    file=sys.stderr,
+                )
+                return 2
+            except Exception as exc2:
+                print(
+                    f"[ghlink] 卸载授权弹窗异常（{exc2}），请手动运行: sudo ghlink uninstall",
+                    file=sys.stderr,
+                )
+                return 2
+        return r.returncode
+    except Exception as exc:
+        print(
+            f"[ghlink] 卸载需要 root 权限，提权失败（{exc}），请手动运行: sudo ghlink uninstall",
+            file=sys.stderr,
+        )
+        return 2
+
+
 def uninstall() -> int:
     """卸载清理（李工 2026-08-22 19:31 终裁：uninstall=彻底删除）。
 
     = disable（停任务）+ remove_block（还原 hosts）+ 删配置目录（当前平台）。
-    返回退出码（0=成功，2=权限/错误）。"""
+    返回退出码（0=成功，2=权限/错误）。
+
+    v0.4.14（Cask 卸载事故修复）：非 root 时自提权重跑——brew cask uninstall
+    不再用 sudo -E 包装（macOS 默认 sudoers 未开 setenv，-E 必被拒），改由本命令
+    内部普通 sudo 提权（有 NOPASSWD 窄放行免密、无则交互输密码）。卸载同时自清
+    ghlink 关联的 sudoers 规则与运行残留（此前需全手动清）。"""
+    # 自提权：非 root 时以 sudo 重跑本命令（root 后走正常流程，无死循环）
+    elevated = _uninstall_self_elevate()
+    if elevated is not None:
+        return elevated
     rc = disable()
     if rc != 0:
-        return rc
+        # v0.5.12（赛博 08:37 根因 + 李工 08:38 批准）：disable 失败不再阻断卸载——
+        # 计划任务不存在/已手动删过等场景下提前 return 会跳过 remove_block，
+        # hosts 的 ghlink 块残留。仅告警，后续清理照常执行。
+        print(
+            f"[ghlink] 警告：停用值守失败（rc={rc}），继续执行 hosts 还原与残留清理",
+            file=sys.stderr,
+        )
     # 还原 hosts（删 ghlink 段落 + 恢复基线）
     if hosts_manager.remove_block():
         print("[ghlink] 已还原 hosts（移除 ghlink 段落）")
     else:
         print("[ghlink] 警告：hosts 段落移除失败（权限？），请手动检查", file=sys.stderr)
+    # v0.5.11（拂晓 02:38 预检 ④ 顺序 bug 实锤，赛博 02:43 核实）：uninstall 先删配置目录
+    # （ghlink.lock 随之被删）再调 _kill_ghlink_residual_procs() → 读 lock 拿 PID 时文件
+    # 已没了 → 跳过 kill → 异步首轮进程残留。kill 必须前置：删目录前 lock 还在，
+    # 读 PID 精确杀；_cleanup_uninstall_residue() 内保留原调用做幂等双保险（此时 lock
+    # 已删自然跳过，无副作用）。
+    _kill_ghlink_residual_procs()
     # 删除配置目录（当前平台生效的配置/状态/缓存）
     cfg_path = _config_path()
     cfg_dir = os.path.dirname(os.path.abspath(cfg_path)) if cfg_path else ""
@@ -366,7 +515,129 @@ def uninstall() -> int:
 
             _sh.rmtree(d, ignore_errors=True)
             print(f"[ghlink] 已删除配置目录: {d}")
+    # v0.4.14：清理 ghlink 关联的系统残留（Cask 卸载事故暴露，此前需全手动）
+    _cleanup_uninstall_residue()
     return 0
+
+
+def _real_user_home() -> str:
+    """root 上下文下还原真实用户 home（v0.5.12 拂晓 03:23 预检发现）。
+
+    brew cask uninstall 走 sudo:true，以 root 运行时 expanduser(~)=/var/root，
+    用户级残留（LaunchAgent plist、~/.ghlink、lock）会漏删。用 SUDO_USER 还原：
+    优先 pwd 查真实用户 home，查不到回退 expanduser("~")（root 时=/var/root）。
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        try:
+            import pwd
+
+            return pwd.getpwnam(sudo_user).pw_dir
+        except (ImportError, KeyError):
+            pass
+    return os.path.expanduser("~")
+
+
+def _cleanup_uninstall_residue() -> None:
+    """卸载残留清理（v0.4.14，root 上下文执行）。
+
+    - /etc/sudoers.d/ghlink：李工 v0.4.5 决策点 2 放行的 NOPASSWD/!env_reset 规则，
+      卸载必须自清（内容含 ghlink 才删，防误删用户自建规则）
+    - ~/.ghlink：托盘 PID/用户态残留（v0.4.14 事故中 ghlink-tray.pid 残留根因）
+    - /var/lib/ghlink：root 状态目录（/etc/ghlink 场景）
+    - /usr/local/etc/ghlink、/opt/homebrew/etc/ghlink：旧 brew 配置残留
+    """
+    import shutil as _sh
+
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    if os.path.exists(sudoers_d):
+        try:
+            with open(sudoers_d, encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            if "ghlink" in content:
+                os.unlink(sudoers_d)
+                print(f"[ghlink] 已清理 sudoers 规则: {sudoers_d}")
+            else:
+                print(
+                    f"[ghlink] 跳过 {sudoers_d}（内容不含 ghlink，疑似非本工具规则）",
+                    file=sys.stderr,
+                )
+        except OSError as exc:
+            print(f"[ghlink] 警告：清理 {sudoers_d} 失败: {exc}", file=sys.stderr)
+    for d in (
+        os.path.join(_real_user_home(), ".ghlink"),
+        "/var/lib/ghlink",
+        "/usr/local/etc/ghlink",
+        "/opt/homebrew/etc/ghlink",
+    ):
+        if os.path.isdir(d):
+            _sh.rmtree(d, ignore_errors=True)
+            print(f"[ghlink] 已清理残留目录: {d}")
+    # v0.5.9（拂晓 00:38 实测发现：deb enable 异步触发的首轮进程不随 uninstall/purge 退出，
+    # purge 后残留需手动 kill；赛博 01:31 清单④）：卸载时读 lock 文件定位 ghlink 自身
+    # 异步进程 PID 再 kill（只杀 ghlink.main 自身，不误伤），保证零残留。
+    _kill_ghlink_residual_procs()
+
+
+def _kill_ghlink_residual_procs() -> None:
+    """v0.5.9（清单④）：卸载时杀掉残留的 ghlink 异步进程。
+
+    读各候选 lock 文件（ghlink.lock 内容 = "PID timestamp"）定位 ghlink 自身进程，
+    存活则 SIGTERM；不模糊匹配进程名，避免误杀。
+    """
+    import signal as _sig
+
+    lock_candidates = []
+    for d in (
+        "/var/lib/ghlink",
+        "/etc/ghlink",
+        "/usr/local/etc/ghlink",
+        "/opt/homebrew/etc/ghlink",
+    ):
+        lock_candidates.append(os.path.join(d, "ghlink.lock"))
+    lock_candidates.append(os.path.join(_real_user_home(), ".ghlink", "ghlink.lock"))
+    for lf in lock_candidates:
+        try:
+            if not os.path.exists(lf):
+                continue
+            with open(lf, encoding="utf-8") as f:
+                content = f.read().strip()
+            pid_str = content.split()[0] if content else ""
+            pid = int(pid_str)
+            if pid > 0 and _pid_alive(pid):
+                try:
+                    os.kill(pid, _sig.SIGTERM)
+                    print(f"[ghlink] 已终止残留进程: PID {pid}（{lf}）")
+                except OSError as exc:
+                    print(f"[ghlink] 警告：终止 PID {pid} 失败: {exc}", file=sys.stderr)
+        except (OSError, ValueError, IndexError):
+            continue
+        # v0.5.12（拂晓 03:40 预检实锤）：托盘清理段仅 macOS（launchctl 命令），
+        # Linux/Windows 无此命令——无 darwin 守卫时 uninstall 直接 FileNotFoundError 崩溃
+        # （0.5.11 kill 前置后 lock 还在 → 走到 launchctl → Linux 崩 + 非零退出 + 残留）。
+        if sys.platform != "darwin":
+            continue
+        import subprocess as _sp
+
+        # uninstall 以 root 跑时 os.getuid()=0，用 SUDO_UID 还原真实用户 uid
+        try:
+            _uid = int(os.environ.get("SUDO_UID") or os.getuid())
+        except (TypeError, ValueError):
+            _uid = os.getuid()
+        _label = f"gui/{_uid}/com.ghlink.tray"
+        _sp.run(["launchctl", "bootout", _label], check=False, timeout=10)
+        # 反写 disable（enable 幂等；不残留禁用状态，重装后自启/注册不受挡）
+        _sp.run(["launchctl", "enable", _label], check=False, timeout=10)
+        # v0.5.12：root 跑 uninstall 时 expanduser(~)=/var/root，用 SUDO_USER 还原真实用户 home
+        _la_plist = os.path.join(
+            _real_user_home(), "Library", "LaunchAgents", "com.ghlink.tray.plist"
+        )
+        if os.path.exists(_la_plist):
+            try:
+                os.unlink(_la_plist)
+                print(f"[ghlink] 已清理 LaunchAgent: {_la_plist}")
+            except OSError as _exc:
+                print(f"[ghlink] 警告：清理 {_la_plist} 失败: {_exc}", file=sys.stderr)
 
 
 def status() -> int:
@@ -489,6 +760,43 @@ def _is_autostart() -> bool:
         return False
 
 
+def _write_tray_plist() -> Optional[str]:
+    """写 LaunchAgent plist 文件（v0.5.3 抽取，双击兜底与 _enable_autostart 共用）。
+
+    返回 plist 路径；失败返回 None。只写文件，不 load / 不清标记。
+    """
+    try:
+        plist_dir = os.path.expanduser("~/Library/LaunchAgents")
+        os.makedirs(plist_dir, exist_ok=True)
+        plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
+        # v0.4.25（赛博根因 2026-08-26，顾笙实测）：GUI 环境 PATH 无 /usr/local/bin，
+        # shutil.which("ghlink") 可能找不到 → 回退 sys.executable 裸 python →
+        # LaunchAgent 拉起即 ModuleNotFoundError（与 LaunchDaemon 同病根）。
+        # 统一 _find_wrapper()：.app 内 wrapper（自带 PYTHONPATH + PATH 补全）优先。
+        exe = _find_wrapper() or sys.executable
+        with open(plist, "w", encoding="utf-8") as f:
+            # v0.4.27（李工 13:33 实测：退出托盘后二次打开 APP 托盘不回来）：
+            # 原 plist 仅 RunAtLoad（登录拉一次），进程退出后 launchctl 不重启。
+            # 加 KeepAlive {SuccessfulExit: false}：崩溃/被杀自动拉起，
+            # 用户显式退出（正常 exit 0）不拉起，语义不冲突。
+            f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ghlink.tray</string>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict></plist>
+""")
+        return plist
+    except Exception:
+        return None
+
+
 def _enable_autostart() -> bool:
     """注册开机自启动（托盘随登录启动）。用户级，无需提权。"""
     try:
@@ -505,24 +813,27 @@ def _enable_autostart() -> bool:
                 winreg.SetValueEx(key, "ghlink-tray", 0, winreg.REG_SZ, f'"{exe}"')
             return True
         elif sys.platform == "darwin":
-            import shutil
-
-            plist_dir = os.path.expanduser("~/Library/LaunchAgents")
-            os.makedirs(plist_dir, exist_ok=True)
-            plist = os.path.join(plist_dir, "com.ghlink.tray.plist")
-            # P1（赛博 23:54 复核）：brew 安装无 ghlink-tray 二进制，用 PATH 里的 ghlink wrapper
-            exe = shutil.which("ghlink") or sys.executable
-            with open(plist, "w", encoding="utf-8") as f:
-                f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.ghlink.tray</string>
-  <key>ProgramArguments</key><array><string>{exe}</string><string>tray</string></array>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
-""")
+            # v0.5.2（拂晓 16:50 五刀②）：重新开启自启时清除用户取消意愿标记
+            try:
+                _marker = os.path.expanduser("~/.ghlink/autostart-disabled")
+                if os.path.exists(_marker):
+                    os.remove(_marker)
+            except Exception:
+                pass
+            plist = _write_tray_plist()
+            if not plist:
+                return False
             import subprocess as _sp
 
+            # v0.5.9（赛博 01:22 根因分析：取消自启→再开启自启，disable 残留持久化在
+            # /var/db/.../disabled.*.plist，删 plist 删不掉；_enable_autostart 只 load 不
+            # enable → 重启时 launchd 不加载 job → 不启动）。开启自启必须反 disable
+            # （enable 幂等），与双击兜底 ①.5 同命令，彻底清掉 disable 残留。
+            _sp.run(
+                ["launchctl", "enable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+                timeout=10,
+            )
             # 赛博 09:56 问题 A：plist 照写（自启动注册必须成功），
             # 已在跑时不重复 load（避免多实例），靠单实例锁兜底
             if not _tray_alive(exclude_pid=os.getpid()):
@@ -559,9 +870,24 @@ def _disable_autostart() -> bool:
             plist = os.path.expanduser("~/Library/LaunchAgents/com.ghlink.tray.plist")
             import subprocess as _sp
 
-            _sp.run(["launchctl", "unload", plist], check=False)
+            # v0.5.2（李工 16:48 实测：点取消自启动→托盘退出）：unload 会连带终止
+            # 当前运行的 job（托盘正是被这个 LaunchAgent 拉起的）= 自杀。
+            # 改为 launchctl disable：只禁下次登录自启，不动当前进程，KeepAlive 保活不中断。
+            _sp.run(
+                ["launchctl", "disable", f"gui/{os.getuid()}/com.ghlink.tray"],
+                check=False,
+            )
             if os.path.exists(plist):
                 os.remove(plist)
+            # 意愿持久化（拂晓 16:50 补刀）：用户显式取消自启写标记，
+            # 防止 main() 首启自动注册逻辑反噬（取消后下次启动又自动注册）
+            try:
+                marker = os.path.expanduser("~/.ghlink/autostart-disabled")
+                os.makedirs(os.path.dirname(marker), exist_ok=True)
+                with open(marker, "w", encoding="utf-8") as f:
+                    f.write("1")
+            except Exception:
+                pass
             return True
         else:
             desktop = os.path.expanduser("~/.config/autostart/ghlink-tray.desktop")
@@ -570,6 +896,51 @@ def _disable_autostart() -> bool:
             return True
     except Exception:
         return False
+
+
+def _autostart_disabled() -> bool:
+    """用户是否显式取消过开机自启动（v0.5.2 意愿持久化标记）。
+
+    李工 16:48 实测：取消自启动 → 托盘退出（unload 自杀）；拂晓 16:50 补刀：
+    自动注册逻辑会反噬取消意愿——main() 首启检测未注册又自动注册回来。
+    取消时写 ~/.ghlink/autostart-disabled，main() 见到标记不再自动注册。
+    """
+    try:
+        return os.path.exists(os.path.expanduser("~/.ghlink/autostart-disabled"))
+    except Exception:
+        return False
+
+
+def _launchagent_pid() -> Optional[int]:
+    """macOS LaunchAgent(com.ghlink.tray) 当前实例 PID，无则 None（v0.5.2 刀①）。
+
+    双击启动重定向用：判断当前进程是否由 LaunchAgent 拉起（launchctl print 的
+    pid 与自身一致 = LaunchAgent 路径；不一致 = 双击/脚本路径）。
+    """
+    if sys.platform != "darwin":
+        return None
+    try:
+        import subprocess as _sp
+
+        out = (
+            _sp.run(
+                ["launchctl", "print", f"gui/{os.getuid()}/com.ghlink.tray"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+            or ""
+        )
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("pid =") and "=" in line:
+                try:
+                    return int(line.split("=", 1)[1].strip())
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return None
 
 
 def _is_registered() -> bool:
@@ -673,20 +1044,92 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
         elif sys.platform == "darwin":
             # v0.2.17 ⑤：PID 文件优先（detach 后 pgrep -f 正则与命令行形态不一致）
             pid_file = _tray_pid_file()
+            # v0.5.5（顾笙 21:35 实测定案，李工 21:35 反馈问题依旧）：
+            # redirecting 标记只修了 ps 兜底路径，PID 文件优先路径没排除——
+            # 双击进程 A 异常被吞后继续前台渲染并抢先写 PID 文件，kickstart 拉起的
+            # B 读 PID 文件发现 A 存活 → 误判已有实例 → B 被杀 → A 屏幕外 = 无反应。
+            # 修复：PID 文件优先路径同样跳过 redirecting 中的双击进程。
+            redirect_pid2: Optional[int] = None
+            try:
+                _rd2 = os.path.join(os.path.expanduser("~"), ".ghlink", "redirecting.pid")
+                if os.path.exists(_rd2):
+                    with open(_rd2, encoding="utf-8") as _f2:
+                        redirect_pid2 = int(_f2.read().strip())
+            except (OSError, ValueError):
+                redirect_pid2 = None
             try:
                 if os.path.exists(pid_file):
                     with open(pid_file, encoding="utf-8") as f:
                         pid = int(f.read().strip())
-                    if pid > 0 and pid != exclude_pid and _pid_alive(pid):
+                    # v0.5.5：PID 文件指向重定向中的双击进程 → 不算已有实例（让 B 接管）
+                    if (
+                        pid > 0
+                        and pid != exclude_pid
+                        and _pid_alive(pid)
+                        and not (redirect_pid2 and pid == redirect_pid2)
+                    ):
                         return True
+                    # v0.4.23（赛博根因 2026-08-26）：PID 文件残留但进程已死
+                    # （crash 后锁没释放）→ 删残留文件，stale 锁自动释放
+                    try:
+                        os.unlink(pid_file)
+                    except OSError:
+                        pass
             except (OSError, ValueError):
-                pass
+                try:
+                    os.unlink(pid_file)
+                except OSError:
+                    pass
+            # v0.5.5（顾笙 20:58 实测定案，李工 20:58 操作复现：退出→双击无反应）：
+            # 双击进程（LaunchServices 会话）kickstart 拉起 LaunchAgent 实例后自身未退出，
+            # 新实例做单实例检查时 ps 匹配到双击进程的 "-m ghlink.main tray" 命令行 →
+            # 误判已有实例 → 新实例立即退出（job runs+1 但 state=not running）→
+            # 双击进程验证失败落前台渲染 = LaunchServices 屏幕外 (-1,1108) = 无反应。
+            # 修复：双击进程 kickstart 前写 redirecting.pid（自身 pid），
+            # 单实例检查跳过该 pid（A/B 并存期不互判），B 渲染成功后 A 退出并清标记。
+            redirect_pid: Optional[int] = None
+            try:
+                _rd = os.path.join(os.path.expanduser("~"), ".ghlink", "redirecting.pid")
+                if os.path.exists(_rd):
+                    with open(_rd, encoding="utf-8") as _f:
+                        redirect_pid = int(_f.read().strip())
+            except (OSError, ValueError):
+                redirect_pid = None
             # 兜底：pgrep（PID 文件缺失/损坏时）
-            out = platform_adapter._run_cmd_output(["pgrep", "-f", "ghlink.*tray"])
-            pids = [int(x) for x in (out or "").split() if x.strip().isdigit()]
-            if exclude_pid:
-                pids = [p for p in pids if p != exclude_pid]
-            return bool(pids)
+            # v0.5.3（顾笙 19:12 实测定案）：pgrep -f "ghlink\\.main tray" 会自匹配——
+            # 诊断命令/exec 命令行含该字符串的进程也被匹配 → 误判已有实例 → 新实例启动即退。
+            # 修复：锚定 -m ghlink.main tray 形态（脚本路径拉起）+ 排除自身 + 排除 ppid=1 外的
+            # 非托盘进程；用 ps 精确匹配命令行结尾，避免宽泛子串。
+            # v0.5.12（李工 13:31 ARM 实测）：PyInstaller 内嵌版托盘是自包含二进制
+            # ghlink-tray（命令行 .../ghlink-tray），不再匹配 -m ghlink.main tray 源码形态
+            # → 假阴性「托盘未运行」。兜底补 PyInstaller 形态：命令行以 ghlink-tray 结尾。
+            out = platform_adapter._run_cmd_output(["ps", "ax", "-o", "pid=,command="])
+            for _line in (out or "").splitlines():
+                _line = _line.strip()
+                if not _line:
+                    continue
+                _pid_s, _cmd = _line.split(None, 1)
+                if "ghlink.main tray" not in _cmd and "ghlink-tray" not in _cmd:
+                    continue
+                # 只认两种形态：源码 python -m ghlink.main tray，或 PyInstaller 内嵌 ghlink-tray
+                _cmd_r = _cmd.rstrip()
+                if not (
+                    _cmd_r.endswith("-m ghlink.main tray")
+                    or _cmd_r.endswith("ghlink.main tray")
+                    or _cmd_r.endswith("ghlink-tray")
+                ):
+                    continue
+                try:
+                    _pid = int(_pid_s)
+                except ValueError:
+                    continue
+                if exclude_pid and _pid == exclude_pid:
+                    continue
+                # v0.5.5：重定向中的双击进程不算已有实例（防互判自杀）
+                if redirect_pid and _pid == redirect_pid:
+                    continue
+                return True
+            return False
         return False
     except Exception:
         return False
@@ -807,7 +1250,10 @@ WantedBy=timers.target
 def _disable_linux() -> int:
     if os.path.exists("/etc/systemd/system/ghlink.timer"):
         platform_adapter._run_cmd(["systemctl", "disable", "--now", "ghlink.timer"])
-        for p in ("/etc/systemd/system/ghlink.timer", "/etc/systemd/system/ghlink.service"):
+        for p in (
+            "/etc/systemd/system/ghlink.timer",
+            "/etc/systemd/system/ghlink.service",
+        ):
             if os.path.exists(p):
                 os.unlink(p)
         platform_adapter._run_cmd(["systemctl", "daemon-reload"])
@@ -825,7 +1271,112 @@ def _disable_linux() -> int:
     return 0
 
 
+def _ensure_sudoers_macos() -> None:
+    """v0.4.19（李工：装了就能用，拒绝手动配置）：enable 以 root 运行时自动写回 sudoers。
+
+    背景：v0.4.5 起 sudoers NOPASSWD 靠人工放行，pkg 重装/卸载自清后丢失，
+    托盘「开启值守」sudo -n 被拒（22:11 实测铁证）。enable 本就是 root 跑，
+    顺手幂等写回：装机即用、重装不丢、无需任何手动命令。
+    """
+    if sys.platform != "darwin":
+        return
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    try:
+        if os.path.exists(sudoers_d):
+            with open(sudoers_d, encoding="utf-8", errors="ignore") as f:
+                if "ghlink" in f.read():
+                    return  # 已有规则，幂等跳过
+        # sudo 下 getuser()=root，需从 SUDO_USER 取原用户
+        import getpass
+
+        user = os.environ.get("SUDO_USER") or getpass.getuser()
+        content = (
+            "# ghlink 托盘提权窄放行（v0.4.19 自动写入，装机即用）\n"
+            f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
+            f'Defaults!{_GHLINK_BIN} env_keep += "GH_TOKEN"\n'
+            f"Defaults!{_GHLINK_BIN} env_keep += "
+            '"HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
+        )
+        tmp = sudoers_d + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(tmp, 0o440)
+        os.replace(tmp, sudoers_d)
+        print(f"[ghlink] 已自动写入 sudoers 提权规则: {sudoers_d}")
+    except Exception as exc:
+        print(f"[ghlink] 警告：sudoers 自动写入失败: {exc}", file=sys.stderr)
+
+
+def _ensure_macos_system_components() -> bool:
+    """v0.5.x（李工 14:36「装两个文件离谱」）：app 首启自装系统组件——
+    软链 + sudoers + LaunchDaemon 模板一次性装好（弹一次管理员授权）。
+
+    手动安装收敛为：dmg 拖一个 app 进 /Applications，首次运行自动引导，
+    不再需要用户手动装第二个 pkg。幂等：已就位直接返回 True。
+    """
+    if sys.platform != "darwin":
+        return True
+    app = "/Applications/ghlink.app/Contents/MacOS/ghlink"
+    # 已就位检查：软链有效 + sudoers 存在 + LaunchDaemon 模板在
+    ok = (
+        os.path.islink(_GHLINK_BIN)
+        and os.path.realpath(_GHLINK_BIN) == app
+        and os.path.exists("/etc/sudoers.d/ghlink")
+    )
+    if ok:
+        return True
+    # 缺组件：弹一次管理员授权执行安装脚本（软链 + sudoers + daemon 模板）
+    import getpass
+    import subprocess as _sp
+
+    sudoers_d = "/etc/sudoers.d/ghlink"
+    user = os.environ.get("SUDO_USER") or getpass.getuser()
+    script = (
+        f"ln -sfn '{app}' {_GHLINK_BIN}; "
+        f"mkdir -p /etc/ghlink /usr/local/etc/ghlink; "
+        f"cp -n '{_GHLINK_APP_LIBEXEC}/config.json' "
+        f"/usr/local/etc/ghlink/config.json 2>/dev/null || true; "
+        f"cat > {sudoers_d} <<'EOS'\n"
+        f"# ghlink 托盘提权窄放行（app 首启自动写入）\n"
+        f"{user} ALL=(root) NOPASSWD: {_GHLINK_BIN}\n"
+        f'Defaults!{_GHLINK_BIN} env_keep += "GH_TOKEN"\n'
+        f'Defaults!{_GHLINK_BIN} env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"\n'
+        f"EOS\n"
+        f"chmod 0440 {sudoers_d}"
+    )
+    try:
+        r = _sp.run(
+            [
+                "osascript",
+                "-e",
+                'do shell script "'
+                + script.replace('"', '\\"')
+                + '" with administrator privileges',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if r.returncode == 0:
+            print("[ghlink] 系统组件首启自装完成（软链 + sudoers + daemon 模板）")
+            return True
+        print(
+            f"[ghlink] 系统组件自装失败（用户取消或错误）: {r.stderr.strip()}",
+            file=sys.stderr,
+        )
+    except Exception as exc:
+        print(f"[ghlink] 系统组件自装异常: {exc}", file=sys.stderr)
+    return False
+
+
 def _enable_macos() -> int:
+    _ensure_sudoers_macos()  # v0.4.19：root 运行自动写回 sudoers，装机即用
+    # v0.4.25（赛博根因 2026-08-26，顾笙实测）：relocate 事故后 /usr/local/bin/ghlink
+    # 软链断 → _python_cmd() 找不到 wrapper → 回退裸 python -m → ModuleNotFoundError
+    # → daemon 挂（runs=2/last exit=1）。修复：ProgramArguments 用 .app 内绝对路径
+    # wrapper（不依赖软链），并显式注入 PYTHONPATH（.app libexec + vendor）双保险。
+    daemon_cmd = _macos_daemon_command()
+    py_path = _macos_pythonpath()
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -833,9 +1384,13 @@ def _enable_macos() -> int:
     <key>Label</key><string>com.ghlink.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{_python_cmd().strip(chr(34))}</string>
+        <string>{daemon_cmd}</string>
         <string>{_config_path()}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key><string>{py_path}</string>
+    </dict>
     <key>StartInterval</key><integer>3600</integer>
     <key>RunAtLoad</key><true/>
     <key>StandardOutPath</key><string>/var/log/ghlink.log</string>
@@ -853,6 +1408,31 @@ def _enable_macos() -> int:
     platform_adapter._run_cmd(["launchctl", "kickstart", "-k", "system/com.ghlink.daemon"])
     print("[ghlink] 已启用值守并立即执行第一轮（LaunchDaemon，1 小时粒度）")
     return 0
+
+
+def _macos_daemon_command() -> str:
+    """macOS LaunchDaemon 执行入口：.app 内绝对路径 wrapper 优先，不依赖 /usr/local/bin 软链。
+
+    v0.4.25（赛博根因 2026-08-26）：relocate 事故 → /usr/local/bin/ghlink 软链断 →
+    _python_cmd() 回退裸 python -m → ModuleNotFoundError。
+    .app 内 wrapper（/Applications/ghlink.app/Contents/MacOS/ghlink）自带 PYTHONPATH 与
+    PATH 补全（v0.4.23），即使软链断了也能跑。
+    """
+    if sys.platform == "darwin":
+        w = _find_wrapper()
+        if w:
+            return w
+    # 非 macOS / 异常环境：走原 _python_cmd()（Windows frozen / dev 回退）
+    return _python_cmd().strip(chr(34))
+
+
+def _macos_pythonpath() -> str:
+    """macOS 注入 PYTHONPATH：.app libexec + vendor（与 wrapper 一致，双保险）。"""
+    if sys.platform == "darwin":
+        app = _GHLINK_APP_LIBEXEC
+        if os.path.isdir(app):
+            return f"{app}:{app}/vendor"
+    return ""
 
 
 def _disable_macos() -> int:

@@ -1,0 +1,20 @@
+# ghlink 托盘提权窄放行模板（v0.4.14 收紧：env_keep 白名单替代 !env_reset）
+# v0.4.19：pkg 安装时 postinstall 自动写入（本文件为模板留档/手动参考）
+#
+# 背景（验收记录 2026-08-25）：李工 v0.4.5 决策点 2 人工放行 NOPASSWD 窄放行
+# （托盘 sudo -n 免密提权，防 v0.4.6 断链事故）；v0.4.14 起 !env_reset 改为
+# env_keep 白名单（sudo 恢复默认 env_reset，收窄提权面，仍保留 GH_TOKEN + 代理变量）。
+# v0.4.19 起 postinstall/enable 自动写入，装机即用无需手动配置。
+#
+# 安装（root，postinstall 已自动执行，一般无需手动）：
+#   sudo install -m 0440 -o root -g wheel packaging/macos/sudoers.d.ghlink.example /etc/sudoers.d/ghlink
+#
+# 验收断言（v0.4.15，干净验证——先清凭证缓存再测免密）：
+#   sudo -k && sudo -n /usr/local/bin/ghlink uninstall   # 必须免密直出（NOPASSWD 显式覆盖 uninstall 子命令）
+#
+# 卸载自清：ghlink uninstall 的 _cleanup_uninstall_residue 会删除本文件
+# （内容含 ghlink 才删，防误删用户自建规则）。
+
+<USER> ALL=(root) NOPASSWD: /usr/local/bin/ghlink
+Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"
+Defaults!/usr/local/bin/ghlink env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"

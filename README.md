@@ -54,7 +54,7 @@
 - 🛡️ **安全红线**：写入前备份 hosts、写入后自检、自检失败回滚——**宁可不变，不能改坏**
 - ⏱️ **冷却防抖**：切换成功后 15 分钟冷却期，避免 IP 抖动导致频繁切换
 - 🧵 **防重入锁**：跨平台（flock / msvcrt / PID 文件），避免定时任务并发执行
-- 🔔 **多渠道告警**：切换、降级、回滚事件实时通知（飞书 / 钉钉 / 企业微信 / Telegram / 通用 Webhook 可配），冷却期去重，发送失败不阻断主流程
+- 🔔 **飞书告警**：切换、降级、回滚事件实时通知（飞书 Webhook 已实现；钉钉 / 企业微信 / Telegram / 通用 Webhook 规划中），冷却期去重，发送失败不阻断主流程
 - 💻 **跨平台**：macOS / Windows / Linux 一套代码，平台差异收敛到单一适配层
 - 📦 **零第三方依赖**：纯 Python 标准库实现，运行无需任何第三方包
 
@@ -97,7 +97,7 @@ src/ghlink/
 ├── resolver.py          # 多 DoH + 系统 DNS 多数票 + 443 预检 + 缓存兜底
 ├── hosts_manager.py     # 段落式写入 / 备份 / 自检 / 回滚
 ├── state.py             # 状态文件原子写
-├── notifier.py          # 多渠道通知（Webhook / 飞书 / 钉钉 / 企业微信等，冷却去重，失败不阻断）
+├── notifier.py          # 飞书通知（Webhook，冷却去重，失败不阻断；多渠道规划中）
 ├── lock.py              # 跨平台防重入锁（flock / msvcrt / PID 文件）
 └── main.py              # 单轮执行闭环（探测→判定→自愈→确认）
 ```
@@ -128,13 +128,44 @@ ghlink 的语义模型（替代 2026-08-16 版「托盘=值守总开关」）：
 
 ```bash
 # 方式一：信任 tap 后安装（Homebrew 4.x 起第三方 tap 默认不可信，必须先 trust）
-brew tap liwmj/ghlink
-brew trust liwmj/ghlink        # 或 brew trust --formula liwmj/ghlink/ghlink
-brew install ghlink
+brew tap liwmj/tap
+brew trust liwmj/tap        # 或 brew trust --formula liwmj/tap/ghlink
+brew install --cask ghlink
 
-# 方式二：若已 tap 但 install 报 Refusing to load formula ... untrusted tap
-brew trust --formula liwmj/ghlink/ghlink && brew install ghlink
+# 方式二：若已 tap 但 install 报 Refusing to load cask ... untrusted tap
+brew trust --cask liwmj/tap/ghlink && brew install --cask ghlink
 ```
+
+> tap 仓库：liwmj/homebrew-tap（2026-08-23 由 homebrew-ghlink 更名，多包通用 tap）
+
+**macOS 卸载（Cask，v0.4.14 起）**
+
+```bash
+brew uninstall --cask ghlink        # 自动执行 ghlink uninstall：停任务 + 还原 hosts + 删配置 + 自清 sudoers 规则
+brew uninstall --cask ghlink --zap  # 二次兜底清理全部残留（彻底卸载推荐）
+```
+
+> v0.4.14 起：brew 不再用 `sudo -E` 包装卸载脚本（macOS 默认 sudoers 未开 setenv，
+> `sudo -E` 必报 "not allowed to preserve the environment"，v0.4.13 及之前会卡死在此），
+> 改由 ghlink uninstall 内部以普通 sudo 自提权执行。若手动配置过 /etc/sudoers.d/ghlink
+> （v0.4.5 起的 NOPASSWD 窄放行），卸载会自动清理该规则。
+
+**macOS 托盘提权配置（可选，v0.4.14 收紧版）**
+
+托盘「启用值守」走 `sudo -n ghlink enable/disable`，免密提权需手动配置 sudoers
+（窄放行 + env_keep 白名单替代 !env_reset）：
+
+```bash
+sudo tee /etc/sudoers.d/ghlink <<'EOF'
+# ghlink 托盘提权窄放行（v0.4.14 收紧：env_keep 白名单替代 !env_reset）
+<用户名> ALL=(root) NOPASSWD: /usr/local/bin/ghlink
+Defaults!/usr/local/bin/ghlink env_keep += "GH_TOKEN"
+Defaults!/usr/local/bin/ghlink env_keep += "HTTP_PROXY HTTPS_PROXY NO_PROXY ALL_PROXY"
+EOF
+sudo visudo -c   # 校验语法
+```
+
+> 将 `<用户名>` 替换为 macOS 登录用户名；卸载时 ghlink uninstall 会自动清理该规则。
 
 **Windows（安装向导 / 裸 exe）**
 
@@ -180,8 +211,10 @@ cp config.example.json config.json
 ```bash
 cp config.example.json config.json
 # 编辑 config.json：
-#   - notify.channel：通知渠道（webhook / feishu / dingtalk / wecom / telegram，可选，默认关）
+#   - notify.feishu_webhook：飞书群机器人 Webhook 地址（配置后启用告警，空=关闭）
+#   - notify.enabled：告警开关（默认 true）
 #   - probe.targets：探测域名清单（默认 github.com / api.github.com 等）
+# 注：钉钉 / 企业微信 / Telegram / 通用 Webhook 等渠道规划中，后续版本支持
 ```
 
 ### 手动运行一次
@@ -269,8 +302,8 @@ ghlink 周期拉取 [GitHub520](https://github.com/521xueweihan/GitHub520) 社�
 | `resolver` | `doh_sources` | 阿里/腾讯/CF/Google | DoH 源 URL 列表 |
 | `resolver` | `cache_ttl_sec` | 3600 | 本地 IP 缓存有效期 |
 | `resolver` | `max_candidates` | 5 | 候选 IP 上限 |
-| `notify` | `channel` | 关 | 通知渠道（webhook / feishu / dingtalk / wecom / telegram） |
-| `notify` | `webhook_url` | 空 | 通用 Webhook URL / 各渠道机器人地址（可选，配置后启用通知） |
+| `notify` | `feishu_webhook` | 空 | 飞书群机器人 Webhook 地址（配置后启用告警；钉钉/企微/Telegram/通用 Webhook 规划中） |
+| `notify` | `enabled` | true | 告警开关 |
 
 ---
 
