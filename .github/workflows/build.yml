@@ -166,28 +166,30 @@ jobs:
           ghlink status
 
   build-macos-pkg:
-    name: macOS dmg (PyInstaller universal2, v0.5.12)
-    runs-on: macos-latest
+    name: macOS dmg (PyInstaller 双包, v0.5.12)
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-13
+          - arch: arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
     needs: [build-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
-      - name: Install python.org universal2 Python 3.14
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Build dmg (PyInstaller 双包, v0.5.12)
         run: |
-          # 李工 11:18 定：必须 universal2 单包（Intel/ARM 通吃）——macos-latest 是 arm64
-          # runner，Homebrew python 单架构打不出双架构；python.org universal2 是 fat 框架
-          curl -L -o /tmp/python.pkg "https://www.python.org/ftp/python/3.14.7/python-3.14.7-macos11.pkg"
-          sudo installer -pkg /tmp/python.pkg -target /
-          /Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14 -m pip install --upgrade pip --quiet
-      - name: Build dmg (PyInstaller universal2, v0.5.12)
-        run: |
-          PY=/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14
+          # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
+          # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
           pip install --only-binary :all: ds-store==1.3.3
-          # v0.5.12（李工 10:34 拍板）：内嵌 python 运行时——DMG 用户零依赖
-          # universal2 单包：Intel/ARM 通吃（李工 11:18 确认）
-          $PY -m pip install --quiet pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
-          $PY -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm --target-arch universal2
-          USE_PYINSTALLER=1 bash packaging/macos/build_dmg.sh
+          pip install --quiet pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
+          USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 供 Cask 同步使用
           DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
           echo "DMG_SHA256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')" >> "$GITHUB_ENV"
