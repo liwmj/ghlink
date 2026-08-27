@@ -210,6 +210,18 @@ DMG_CONTENT="$STAGE/dmg-content"
 mkdir -p "$DMG_CONTENT"
 cp -R "$APP" "$DMG_CONTENT/"
 ln -s /Applications "$DMG_CONTENT/Applications"
+
+# ad-hoc 重签（v0.5.12 李工 13:05 报「ghlink.app 已损坏」根治）——
+# PyInstaller 产物 adhoc 签名与资源不匹配，Gatekeeper 判定损坏；
+# 打包前强制全量重签（app + 内部所有二进制），本地校验通过再进 dmg。
+# 彻底无弹窗需 Developer ID + notarization（待李工 Apple 账号决策）。
+if [ -d "$DMG_CONTENT/ghlink.app" ]; then
+  echo "==> ad-hoc 重签 app（Gatekeeper 兼容）"
+  codesign --force --deep --sign - "$DMG_CONTENT/ghlink.app" >/dev/null 2>&1 \
+    && codesign --verify --deep --strict "$DMG_CONTENT/ghlink.app" >/dev/null 2>&1 \
+    && echo "  OK: 签名验证通过" \
+    || echo "  WARN: 重签/校验失败（dmg 仍生成，真机可能报 Gatekeeper 拦截）"
+fi
 # 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
 cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
 ghlink 安装说明（v0.5.x dmg 版）
