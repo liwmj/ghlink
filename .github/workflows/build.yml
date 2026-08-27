@@ -209,6 +209,9 @@ jobs:
           # （本机 universal2 尝试同款 exit -6 SIGABRT）→ 产物缺 PyObjC .so。
           # 双保险：①禁用隔离（PYINSTALLER_DISABLE_ISOLATED=1）②spec 显式 glob 收集（见 ghlink.spec）
           export PYINSTALLER_DISABLE_ISOLATED=1
+          # v0.5.12（李工 21:13 催 ARM 包）：PyInstaller bincache 脏缓存撞 IsADirectoryError
+          # （--clean 只清 build/ 不清 bincache）——构建前强制清 bincache，保证 PyObjC .so 干净收集
+          rm -rf "$HOME/Library/Application Support/pyinstaller/bincache"*
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
           USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
