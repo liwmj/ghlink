@@ -54,13 +54,13 @@ jobs:
           name: dist-python
           path: dist/
       - name: Publish to PyPI
-        # v0.5.12（李工 15:09 批）：重打 tag 重复发布时 PyPI 报 400 File already exists
-        # （PyPI 已有同 hash 文件，内容一致）——continue-on-error 容忍，job 转绿；
-        # 真失败（网络/凭证）仍会告警，不影响后续 job。
-        continue-on-error: true
+        # v0.5.12（李工 15:29 批）：线上已有完全相同的包（同文件名同 hash）时
+        # skip-existing 跳过不报错——比 continue-on-error 精准：仅容忍「文件已存在」，
+        # 其他错误（网络/凭证/真冲突）仍正常失败红。
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          skip-existing: true
 
   build-windows:
     name: Windows exe (PyInstaller + Inno)
