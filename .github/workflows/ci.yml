@@ -2,9 +2,7 @@ name: CI (lint + type + test)
 
 on:
   push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
