@@ -47,17 +47,24 @@ mkdir -p "$WHEEL_DIR/universal"
 for W in "$WHEEL_DIR/universal"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/universal/unpacked"; done
 cp -R "$WHEEL_DIR/universal/unpacked/." "$VENDOR/"
 # 2) Pillow 分架构拉取 → lipo 合并 fat binary（单 dmg 通吃 Intel/Apple Silicon）
+# v0.5.13（李工 ARM 托盘根因）：版本必须锁死——不锁时 x86_64/arm64 各拉最新版，
+# 版本不一致 → dylib 文件名不同（libavif.16.3.0 vs 16.4.2、libz.1.3.1 vs libz.1.3.1.zlib-ng）
+# → lipo 按路径匹配失败 → ARM 缺 dylib → _imaging.so 加载 ImportError → 托盘起不来。
+PILLOW_VER="Pillow==11.3.0"
 for ARCH in x86_64 arm64; do
   mkdir -p "$WHEEL_DIR/$ARCH"
   PLATFORM="macosx_10_13_${ARCH}"
   [ "$ARCH" = "arm64" ] && PLATFORM="macosx_11_0_${ARCH}"
   "$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
     --platform "$PLATFORM" --python-version 3.14 --abi cp314 \
-    -d "$WHEEL_DIR/$ARCH" Pillow --quiet || exit 1
+    -d "$WHEEL_DIR/$ARCH" "$PILLOW_VER" --quiet || exit 1
   for W in "$WHEEL_DIR/$ARCH"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/$ARCH/unpacked"; done
 done
 cp -R "$WHEEL_DIR/x86_64/unpacked/." "$VENDOR/"
 # v0.4.16：lipo 必须覆盖 .dylib——Pillow 的 @loader_path/.dylibs/*.dylib
+# 动态库只合了 x86_64，arm64 机器 dyld 加载 _imaging.so 时找不到 arm64 dylib → ImportError
+# v0.5.13 补强：同名 dylib lipo 合并 + arm64 独有 dylib 补拷（libz.1.3.1.zlib-ng 等
+# 不同名文件必须直接拷入，否则 fat _imaging.so 的 arm64 slice 引用不到 → 加载失败）
 find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO; do
   REL="${SO#"$VENDOR"/}"
   ARM_SO="$WHEEL_DIR/arm64/unpacked/$REL"
@@ -66,47 +73,79 @@ find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO;
     echo "    lipo merged: $REL"
   fi
 done
+# arm64 独有 dylib 补拷（不同名文件：libz.1.3.1.zlib-ng 等）
+if [ -d "$WHEEL_DIR/arm64/unpacked/PIL/.dylibs" ]; then
+  find "$WHEEL_DIR/arm64/unpacked/PIL/.dylibs" -name "*.dylib" | while read -r ARM_DYLIB; do
+    REL="${ARM_DYLIB#"$WHEEL_DIR/arm64/unpacked/"}"
+    DEST="$VENDOR/$REL"
+    if [ ! -f "$DEST" ]; then
+      cp "$ARM_DYLIB" "$DEST"
+      echo "    copied arm64-only: $REL"
+    fi
+  done
+fi
 rm -rf "$WHEEL_DIR"
 
 # CLI 可执行（内嵌 .app；首启自装时软链 /usr/local/bin/ghlink 指向此路径）
-cat > "$APP/Contents/MacOS/ghlink" <<EOF
+cat > "$APP/Contents/MacOS/ghlink" <<'EOF'
 #!/bin/bash
-SELF="\$0"
-while [ -L "\$SELF" ]; do
-  LINK="\$(readlink "\$SELF")"
-  case "\$LINK" in
-    /*) SELF="\$LINK" ;;
-    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
   esac
 done
-APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
-export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+APP_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+export PYTHONPATH="$APP_DIR/libexec:$APP_DIR/libexec/vendor"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# v0.5.13（李工 10:30 发布风险）：vendored 依赖按 cp314 ABI 编译，python 必须 3.14。
+# 找不到/版本不符时给明确提示，不再静默报「缺少托盘依赖」假象。
+_py() {
+  "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 14) else 1)' 2>/dev/null
+}
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
-  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main "\$@"
+  if [ -x "$PY" ] && _py "$PY"; then
+    exec "$PY" -m ghlink.main "$@"
+  fi
 done
-exec "/usr/local/bin/python3" -m ghlink.main "\$@"
+if command -v python3 >/dev/null 2>&1 && _py "$(command -v python3)"; then
+  exec "$(command -v python3)" -m ghlink.main "$@"
+fi
+echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请安装: brew install python@3.14" >&2
+exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink"
 
 # 托盘入口（双击启动；LaunchAgent 也走此路径，绕开 LaunchServices 双击链路）
-cat > "$APP/Contents/MacOS/ghlink-tray" <<EOF
+cat > "$APP/Contents/MacOS/ghlink-tray" <<'EOF'
 #!/bin/bash
-SELF="\$0"
-while [ -L "\$SELF" ]; do
-  LINK="\$(readlink "\$SELF")"
-  case "\$LINK" in
-    /*) SELF="\$LINK" ;;
-    *) SELF="\$(dirname "\$SELF")/\$LINK" ;;
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
   esac
 done
-APP_DIR="\$(cd "\$(dirname "\$SELF")/.." && pwd)"
-export PYTHONPATH="\$APP_DIR/libexec:\$APP_DIR/libexec/vendor"
+APP_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+export PYTHONPATH="$APP_DIR/libexec:$APP_DIR/libexec/vendor"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# v0.5.13（李工 10:30 发布风险）：同 ghlink wrapper，python 必须 3.14
+_py() {
+  "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 14) else 1)' 2>/dev/null
+}
 for PY in /opt/homebrew/opt/python@3.14/bin/python3.14 /usr/local/opt/python@3.14/bin/python3.14; do
-  [ -x "\$PY" ] && exec "\$PY" -m ghlink.main tray "\$@"
+  if [ -x "$PY" ] && _py "$PY"; then
+    exec "$PY" -m ghlink.main tray "$@"
+  fi
 done
-exec "/usr/local/bin/python3" -m ghlink.main tray "\$@"
+if command -v python3 >/dev/null 2>&1 && _py "$(command -v python3)"; then
+  exec "$(command -v python3)" -m ghlink.main tray "$@"
+fi
+echo "[ghlink] 需要 Python 3.14（vendored 依赖按 cp314 ABI 编译）。请安装: brew install python@3.14" >&2
+exit 2
 EOF
 chmod 0755 "$APP/Contents/MacOS/ghlink-tray"
 
@@ -157,10 +196,15 @@ ghlink 安装说明（v0.5.x dmg 版）
 4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
 
-# Finder 窗口布局：.DS_Store 大图标（李工 16:50 反馈「DMG包里的图标大一点”）——
-# 用 ds-store 库直接生成，不依赖 Finder/TCC 授权（osascript 方式 CI 上不可用）
-echo "==> 生成 Finder 布局 .DS_Store（大图标）"
-python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+# Finder 窗口布局：默认不生成 .DS_Store（v0.5.13 李工 09:45 确认）——
+# 自定义大图标布局（make_dmg_dsstore.py 的 ICVO/Iloc）在 ARM/新系统 Finder 上
+# 渲染失败 → DiskImageMounter 挂载后显示空白（文件实际在）。删掉后 Finder 用
+# 默认布局，ghlink.app 必显示。如需大图标，后续修 make_dmg_dsstore.py 兼容布局。
+# 可选恢复：DMG_DSSTORE=1 bash build_dmg.sh（旧行为，仅供调试）
+if [ -n "${DMG_DSSTORE:-}" ]; then
+  echo "==> 生成 Finder 布局 .DS_Store（大图标，调试模式）"
+  python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+fi
 
 hdiutil create -volname "ghlink" -srcfolder "$DMG_CONTENT" -ov \
   -format UDZO "$OUT/ghlink-${VERSION}.dmg" >/dev/null
