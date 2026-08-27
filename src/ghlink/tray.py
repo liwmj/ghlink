@@ -102,8 +102,15 @@ def _state_path() -> str:
             with open(cfg_path, encoding="utf-8") as f:
                 cfg = _json.load(f)
             st_path = cfg.get("state_file", "ghlink_status.json")
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback, time as _t
+            try:
+                with open("/tmp/ghlink-tray-err.log", "a") as _f:
+                    _f.write("[" + _t.strftime("%H:%M:%S") + "] tray darwin native error: " + repr(e) + "\n")
+                    traceback.print_exc(file=_f)
+            except Exception:
+                pass
+            print("[ghlink] tray darwin native error:", repr(e), file=sys.stderr)
     return st_path
 
 
