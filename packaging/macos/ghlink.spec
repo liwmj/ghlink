@@ -9,16 +9,41 @@
 
 import sys
 from pathlib import Path
+import glob
 
 # SPECPATH = packaging/macos/，仓库根 = 上两级
 ROOT = Path(SPECPATH).resolve().parent.parent
 SRC = ROOT / "src"
 
+# v0.5.12（李工 18:14「修复版仍无托盘」真根因实锤）：CI 的 python.org framework
+# Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败（本机 universal2
+# 尝试同款 exit -6 SIGABRT）→ 产物缺 AppKit/objc/Foundation/Quartz 的 .so →
+# HAS_NATIVE=False → 回退 pystray → ARM 原生不渲染 → 无托盘。
+# 修复：不依赖 hook，直接 glob site-packages 下 PyObjC 相关包的全部 .so 显式进 binaries。
+def _pyobjc_binaries():
+    bins = []
+    try:
+        import objc  # noqa: F401
+        sp = Path(objc.__file__).resolve().parent.parent  # site-packages 根
+        for pkg in ("objc", "AppKit", "Foundation", "Quartz", "CoreFoundation", "PIL"):
+            base = sp / pkg
+            for so in sorted(glob.glob(str(base / "**" / "*.so"), recursive=True)):
+                if ".dSYM" in so:
+                    continue
+                rel = str(Path(so).relative_to(sp))
+                bins.append((so, rel))
+        print(f"PyObjC binaries collected: {len(bins)}")
+    except Exception as e:
+        print(f"WARN: pyobjc binaries collect failed: {e}")
+    return bins
+
+PYOBJC_BINARIES = _pyobjc_binaries()
+
 # ---------- CLI 入口 ----------
 a = Analysis(
     [str(ROOT / "packaging" / "macos" / "scripts" / "ghlink_entry.py")],
     pathex=[str(SRC)],
-    binaries=[],
+    binaries=PYOBJC_BINARIES,
     datas=[
         (str(ROOT / "config.example.json"), "."),
         (str(ROOT / "assets" / "ghlink-icon.png"), "assets"),
@@ -49,7 +74,7 @@ a = Analysis(
 a_tray = Analysis(
     [str(ROOT / "packaging" / "macos" / "scripts" / "ghlink_tray_entry.py")],
     pathex=[str(SRC)],
-    binaries=[],
+    binaries=PYOBJC_BINARIES,
     datas=[
         (str(ROOT / "config.example.json"), "."),
         (str(ROOT / "assets" / "ghlink-icon.png"), "assets"),
