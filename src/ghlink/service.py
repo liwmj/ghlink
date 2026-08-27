@@ -1100,17 +1100,23 @@ def _tray_alive(exclude_pid: int = 0) -> bool:
             # 诊断命令/exec 命令行含该字符串的进程也被匹配 → 误判已有实例 → 新实例启动即退。
             # 修复：锚定 -m ghlink.main tray 形态（脚本路径拉起）+ 排除自身 + 排除 ppid=1 外的
             # 非托盘进程；用 ps 精确匹配命令行结尾，避免宽泛子串。
+            # v0.5.12（李工 13:31 ARM 实测）：PyInstaller 内嵌版托盘是自包含二进制
+            # ghlink-tray（命令行 .../ghlink-tray），不再匹配 -m ghlink.main tray 源码形态
+            # → 假阴性「托盘未运行」。兜底补 PyInstaller 形态：命令行以 ghlink-tray 结尾。
             out = platform_adapter._run_cmd_output(["ps", "ax", "-o", "pid=,command="])
             for _line in (out or "").splitlines():
                 _line = _line.strip()
                 if not _line:
                     continue
                 _pid_s, _cmd = _line.split(None, 1)
-                if "ghlink.main tray" not in _cmd:
+                if "ghlink.main tray" not in _cmd and "ghlink-tray" not in _cmd:
                     continue
-                # 只认 python -m ghlink.main tray 形态（/…/Python -m ghlink.main tray）
-                if not _cmd.rstrip().endswith("-m ghlink.main tray") and not _cmd.rstrip().endswith(
-                    "ghlink.main tray"
+                # 只认两种形态：源码 python -m ghlink.main tray，或 PyInstaller 内嵌 ghlink-tray
+                _cmd_r = _cmd.rstrip()
+                if not (
+                    _cmd_r.endswith("-m ghlink.main tray")
+                    or _cmd_r.endswith("ghlink.main tray")
+                    or _cmd_r.endswith("ghlink-tray")
                 ):
                     continue
                 try:
