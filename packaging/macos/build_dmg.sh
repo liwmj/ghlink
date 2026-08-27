@@ -47,17 +47,24 @@ mkdir -p "$WHEEL_DIR/universal"
 for W in "$WHEEL_DIR/universal"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/universal/unpacked"; done
 cp -R "$WHEEL_DIR/universal/unpacked/." "$VENDOR/"
 # 2) Pillow 分架构拉取 → lipo 合并 fat binary（单 dmg 通吃 Intel/Apple Silicon）
+# v0.5.13（李工 ARM 托盘根因）：版本必须锁死——不锁时 x86_64/arm64 各拉最新版，
+# 版本不一致 → dylib 文件名不同（libavif.16.3.0 vs 16.4.2、libz.1.3.1 vs libz.1.3.1.zlib-ng）
+# → lipo 按路径匹配失败 → ARM 缺 dylib → _imaging.so 加载 ImportError → 托盘起不来。
+PILLOW_VER="Pillow==11.3.0"
 for ARCH in x86_64 arm64; do
   mkdir -p "$WHEEL_DIR/$ARCH"
   PLATFORM="macosx_10_13_${ARCH}"
   [ "$ARCH" = "arm64" ] && PLATFORM="macosx_11_0_${ARCH}"
   "$PYTHON_BIN" -m pip download --only-binary=:all: --no-deps \
     --platform "$PLATFORM" --python-version 3.14 --abi cp314 \
-    -d "$WHEEL_DIR/$ARCH" Pillow --quiet || exit 1
+    -d "$WHEEL_DIR/$ARCH" "$PILLOW_VER" --quiet || exit 1
   for W in "$WHEEL_DIR/$ARCH"/*.whl; do unzip -qo "$W" -d "$WHEEL_DIR/$ARCH/unpacked"; done
 done
 cp -R "$WHEEL_DIR/x86_64/unpacked/." "$VENDOR/"
 # v0.4.16：lipo 必须覆盖 .dylib——Pillow 的 @loader_path/.dylibs/*.dylib
+# 动态库只合了 x86_64，arm64 机器 dyld 加载 _imaging.so 时找不到 arm64 dylib → ImportError
+# v0.5.13 补强：同名 dylib lipo 合并 + arm64 独有 dylib 补拷（libz.1.3.1.zlib-ng 等
+# 不同名文件必须直接拷入，否则 fat _imaging.so 的 arm64 slice 引用不到 → 加载失败）
 find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO; do
   REL="${SO#"$VENDOR"/}"
   ARM_SO="$WHEEL_DIR/arm64/unpacked/$REL"
@@ -66,6 +73,17 @@ find "$VENDOR" \( -name "*.so" -o -name "*.dylib" \) -type f | while read -r SO;
     echo "    lipo merged: $REL"
   fi
 done
+# arm64 独有 dylib 补拷（不同名文件：libz.1.3.1.zlib-ng 等）
+if [ -d "$WHEEL_DIR/arm64/unpacked/PIL/.dylibs" ]; then
+  find "$WHEEL_DIR/arm64/unpacked/PIL/.dylibs" -name "*.dylib" | while read -r ARM_DYLIB; do
+    REL="${ARM_DYLIB#"$WHEEL_DIR/arm64/unpacked/"}"
+    DEST="$VENDOR/$REL"
+    if [ ! -f "$DEST" ]; then
+      cp "$ARM_DYLIB" "$DEST"
+      echo "    copied arm64-only: $REL"
+    fi
+  done
+fi
 rm -rf "$WHEEL_DIR"
 
 # CLI 可执行（内嵌 .app；首启自装时软链 /usr/local/bin/ghlink 指向此路径）
