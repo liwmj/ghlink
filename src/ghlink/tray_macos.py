@@ -63,7 +63,12 @@ def _pil_to_nsimage(img: Any) -> Any:
     img.save(buf, format="PNG")
     data = buf.getvalue()
     nsdata = NSData.dataWithBytes_length_(data, len(data))
-    return NSImage.alloc().initWithData_(nsdata)
+    nsimage = NSImage.alloc().initWithData_(nsdata)
+    # v0.5.13（李工 10:21 ARM 实测：图标很大）：_make_icon 生成 64px 原图，
+    # 菜单栏标准 18-22pt——NSImage 必须显式 setSize_ 缩放到 22pt
+    # （Retina 下自动 2x 渲染 44px，源 64px 足够清晰）。
+    nsimage.setSize_((22, 22))
+    return nsimage
 
 
 def _notify(text: str) -> None:
