@@ -210,7 +210,8 @@ jobs:
           # 双保险：①禁用隔离（PYINSTALLER_DISABLE_ISOLATED=1）②spec 显式 glob 收集（见 ghlink.spec）
           export PYINSTALLER_DISABLE_ISOLATED=1
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
-          USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
+          # v0.5.13 (Li 21:33): VERSION must follow tag, not hardcoded 0.5.12
+          USE_PYINSTALLER=1 VERSION=${GITHUB_REF_NAME#v}-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
           echo "arm=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "x86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
