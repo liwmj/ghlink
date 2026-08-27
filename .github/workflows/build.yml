@@ -75,7 +75,10 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
-          iscc packaging/windows/ghlink.iss
+          # v0.5.12（李工 08-27 定）：版本号注入 pyproject.toml 真值，根治 iss 硬编码 0.4.22
+          $ver = (Select-String -Path pyproject.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $ver) { Write-Error "pyproject.toml version 解析失败"; exit 1 }
+          iscc "/DMyAppVersion=$ver" packaging/windows/ghlink.iss
       - name: Rename installer asset
         shell: pwsh
         run: |
