@@ -191,14 +191,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
       - name: Build dmg (PyInstaller 双包, v0.5.12)
         id: sha
         run: |
           # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
           # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
           pip install --only-binary :all: ds-store==1.3.3
-          pip install --quiet pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          # v0.5.12（拂晓 19:01 根因：CI 包缺 PyObjC .so → ARM 托盘不渲染）：
+          # ① 去掉 --quiet 让 pyobjc 安装错误可见 ② 装完 import 验证，装不上立即红杜绝带病出包
+          # ③ python 3.12（3.14 上 pyobjc wheel 缺失导致安装失败被静默跳过）
+          pip install pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          python3 -c 'import objc, AppKit, Foundation, Quartz; print("PyObjC OK")'
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
           USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
