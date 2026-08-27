@@ -204,6 +204,11 @@ jobs:
           # → ARM 原生不渲染 → 无托盘。去掉 --quiet + 安装后验证 + set -e 兜底。
           pip install pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
           python3 -c "import objc, AppKit, Foundation, Quartz; print('PyObjC OK')"
+          # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」第二层根因）：CI 的 python.org
+          # framework Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败
+          # （本机 universal2 尝试同款 exit -6 SIGABRT）→ 产物缺 PyObjC .so。
+          # 双保险：①禁用隔离（PYINSTALLER_DISABLE_ISOLATED=1）②spec 显式 glob 收集（见 ghlink.spec）
+          export PYINSTALLER_DISABLE_ISOLATED=1
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
           USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
           # 输出 dmg sha256 到 job outputs（v0.5.12 双包：各实例只算自己的架构）
