@@ -1,7 +1,8 @@
 name: CI (lint + type + test)
 
 on:
-  workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 jobs:
   quality:
