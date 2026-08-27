@@ -194,9 +194,11 @@ jobs:
           pip install --quiet pyinstaller pystray Pillow==11.3.0 pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz
           python3 -m PyInstaller packaging/macos/ghlink.spec --distpath dist/macos-pyi --workpath build/macos-pyi --clean --noconfirm
           USE_PYINSTALLER=1 VERSION=0.5.12-${{ matrix.arch }} bash packaging/macos/build_dmg.sh
-          # 输出 dmg sha256 供 Cask 同步使用
-          DMG_FILE="$(ls dist/macos/ghlink-*.dmg | head -1)"
-          echo "DMG_SHA256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')" >> "$GITHUB_ENV"
+          # 输出 dmg sha256 供 Cask 同步使用（v0.5.12 双包：arm64/x86_64 分别输出）
+          ARM_DMG="$(ls dist/macos/ghlink-*-arm64.dmg 2>/dev/null | head -1)"
+          X86_DMG="$(ls dist/macos/ghlink-*-x86_64.dmg 2>/dev/null | head -1)"
+          echo "DMG_SHA256_ARM=$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "DMG_SHA256_X86=$(shasum -a 256 "$X86_DMG" | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Sync Cask to tap (homebrew-tap)
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -206,8 +208,9 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           git clone "https://x-access-token:${GH_PAT}@github.com/${TAP_REPO}.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          # 替换 Cask 中的 sha256 占位符为真实 dmg sha256 + version 随 tag 动态化（macOS BSD sed 需 -i ''）
-          sed -i '' "s/REPLACE_WITH_DMG_SHA256/${DMG_SHA256}/" packaging/macos/Casks/ghlink.rb
+          # 替换 Cask 中的 sha256 为双包真值（arm64/x86_64 分别写）+ version 随 tag 动态化（macOS BSD sed 需 -i ''）
+          sed -i '' "s/sha256 arm:.*/sha256 arm:   \"${DMG_SHA256_ARM}\",/" packaging/macos/Casks/ghlink.rb
+          sed -i '' "s/       intel:.*/       intel: \"${DMG_SHA256_X86}\"/" packaging/macos/Casks/ghlink.rb
           sed -i '' "s/version \"[0-9.]*\"/version \"${TAG#v}\"/" packaging/macos/Casks/ghlink.rb
           cp packaging/macos/Casks/ghlink.rb "$RUNNER_TEMP/tap/Casks/ghlink.rb"
           cd "$RUNNER_TEMP/tap"
