@@ -119,8 +119,14 @@ class _MacTray(NSObject):
         # Accessory（=1）：菜单栏常驻不占 Dock（与 tray._hide_dock_icon 同效，双保险）
         try:
             app.setActivationPolicy_(1)
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            try:
+                with open("/tmp/ghlink-tray-err.log", "a") as _f:
+                    _f.write("[" + time.strftime("%H:%M:%S") + "] refresh error: " + repr(e) + "\n")
+                    traceback.print_exc(file=_f)
+            except Exception:
+                pass
         self._status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSVariableStatusItemLength
         )
