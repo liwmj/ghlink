@@ -157,10 +157,15 @@ ghlink 安装说明（v0.5.x dmg 版）
 4. 托盘图标出现即完成；值守可在托盘菜单「启用值守」开启
 EOF
 
-# Finder 窗口布局：.DS_Store 大图标（李工 16:50 反馈「DMG包里的图标大一点”）——
-# 用 ds-store 库直接生成，不依赖 Finder/TCC 授权（osascript 方式 CI 上不可用）
-echo "==> 生成 Finder 布局 .DS_Store（大图标）"
-python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+# Finder 窗口布局：默认不生成 .DS_Store（v0.5.13 李工 09:45 确认）——
+# 自定义大图标布局（make_dmg_dsstore.py 的 ICVO/Iloc）在 ARM/新系统 Finder 上
+# 渲染失败 → DiskImageMounter 挂载后显示空白（文件实际在）。删掉后 Finder 用
+# 默认布局，ghlink.app 必显示。如需大图标，后续修 make_dmg_dsstore.py 兼容布局。
+# 可选恢复：DMG_DSSTORE=1 bash build_dmg.sh（旧行为，仅供调试）
+if [ -n "${DMG_DSSTORE:-}" ]; then
+  echo "==> 生成 Finder 布局 .DS_Store（大图标，调试模式）"
+  python3 "$ROOT/packaging/macos/make_dmg_dsstore.py" "$DMG_CONTENT" 96 2>/dev/null || echo "  WARN: .DS_Store 生成失败（dmg 仍可用，默认布局）"
+fi
 
 hdiutil create -volname "ghlink" -srcfolder "$DMG_CONTENT" -ov \
   -format UDZO "$OUT/ghlink-${VERSION}.dmg" >/dev/null

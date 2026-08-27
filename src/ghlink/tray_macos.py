@@ -144,8 +144,13 @@ class _MacTray(NSObject):
             key = (color, status)
             if getattr(self, "_menu_key", None) == key:
                 return
-            self._status_item.setImage_(_pil_to_nsimage(_tray._make_icon(color)))
-            self._status_item.setToolTip_(status)
+            # v0.5.13（李工 09:37 ARM 托盘不显示定位）：NSStatusItem 渲染必须经
+            # .button()（macOS 10.10+ 规范）——直接 setImage_ 在 ARM/新系统上
+            # 静默不渲染/坐标异常（0.4.25 实锤 (-1,1087) 屏幕外同源）。
+            btn = self._status_item.button()
+            if btn is not None:
+                btn.setImage_(_pil_to_nsimage(_tray._make_icon(color)))
+                btn.setToolTip_(status)
             self._status_item.setMenu_(self._build_menu())
             self._menu_key = key
         except Exception:
