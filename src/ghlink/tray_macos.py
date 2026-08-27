@@ -119,8 +119,8 @@ class _MacTray(NSObject):
         # Accessory（=1）：菜单栏常驻不占 Dock（与 tray._hide_dock_icon 同效，双保险）
         try:
             app.setActivationPolicy_(1)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f'[ghlink] setActivationPolicy 异常: {exc}', file=sys.stderr)
         self._status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSVariableStatusItemLength
         )
@@ -162,8 +162,12 @@ class _MacTray(NSObject):
                 btn.setToolTip_(status)
             self._status_item.setMenu_(self._build_menu())
             self._menu_key = key
-        except Exception:
-            pass
+        except Exception as exc:
+            # v0.5.12（李工 21:03 ARM 实测：进程在跑无图标，异常被静默吞）——打印真实
+            # 渲染异常到 stderr，LaunchAgent StandardErrorPath 可捕获定位。
+            import traceback as _tb
+            print(f'[ghlink] tray refresh 异常: {exc}', file=sys.stderr)
+            _tb.print_exc(file=sys.stderr)
 
     # ---- 菜单构建（口径与 tray._build_menu 一致） ----
 
