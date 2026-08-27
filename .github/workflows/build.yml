@@ -217,7 +217,7 @@ jobs:
           # framework Python 上 PyInstaller 隔离模式 hook 收集 PyObjC 动态库静默失败
           # （本机 universal2 尝试同款 exit -6 SIGABRT）→ 产物缺 PyObjC .so。
           # 双保险：①禁用隔离（PYINSTALLER_DISABLE_ISOLATED=1）②spec 显式 glob 收集（见 ghlink.spec）
-#           export PYINSTALLER_DISABLE_ISOLATED=1
+          # export PYINSTALLER_DISABLE_ISOLATED=1  # test: 验证是否 PYZ 崩溃破坏者
           # v0.5.12（李工 21:13 催 ARM 包）：PyInstaller bincache 脏缓存撞 IsADirectoryError
           # （--clean 只清 build/ 不清 bincache）——构建前强制清 bincache，保证 PyObjC .so 干净收集
           rm -rf "$HOME/Library/Application Support/pyinstaller/bincache"*
