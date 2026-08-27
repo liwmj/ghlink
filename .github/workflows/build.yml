@@ -196,7 +196,10 @@ jobs:
           # 尝试同款 exit -6 SIGABRT）。改用 Homebrew python@3.13 打包（3.14 PYZ zlib 损坏，李工 23:08 实测仍崩）（本机 Homebrew
           # 验证 13 条 PyObjC 进包成功）。
           brew install python@3.13
-          # PEP 668 externally-managed：Homebrew python 禁止裸 pip 系统级安装，`n          # 必须用 venv（PR #160，顾笙本机验证 PyObjC 13 条进包同款路径）`n          python3 -m venv /tmp/ghlink-venv`n          echo "/tmp/ghlink-venv/bin" >> "$GITHUB_PATH"
+          # PEP 668 externally-managed：Homebrew python 禁止裸 pip 系统级安装，
+          # 必须用 venv（PR #160，顾笙本机验证 PyObjC 13 条进包同款路径）
+          python3 -m venv /tmp/ghlink-venv
+          echo "/tmp/ghlink-venv/bin" >> "$GITHUB_PATH"
           python3 --version
           which python3
           python3 -c "import sys; print(sys.executable)"
@@ -205,6 +208,7 @@ jobs:
         run: |
           # 李工 11:20 拍板：分双包（Pillow 无 universal2 wheel，双 runner 矩阵最稳）
           # macos-13 = x86_64 runner，macos-14 = arm64 runner，各出对应架构 dmg
+          # PEP 668：venv 内 pip 正常（python3 已指向 /tmp/ghlink-venv/bin）
           python3 -m pip install --break-system-packages --only-binary :all: ds-store==1.3.3
           # v0.5.12（李工 18:14 真机实锤「修复版仍无托盘」根因）：pyobjc 必须装成功
           # 且被 PyInstaller 收集进包——之前 --quiet 吞了安装失败，PyInstaller 缺
