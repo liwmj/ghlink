@@ -227,6 +227,9 @@ fi
 cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
 ghlink 安装说明（v0.5.12 dmg 版）
 
+0. 选择正确的包：Intel Mac 用 ghlink-0.5.12-x86_64.dmg，
+   Apple 芯片（M 系列）用 ghlink-0.5.12-arm64.dmg
+
 1. 把 ghlink.app 拖到 Applications 文件夹（或直接拖到左侧 Applications 快捷方式）
 2. 首次打开：右键 ghlink.app → 打开 → 点「打开」（未公证 app 首次需确认）
    若提示「已损坏，无法打开」，在终端执行：
