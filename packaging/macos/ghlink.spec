@@ -46,7 +46,7 @@ def _pyobjc_binaries():
         # 确定性复现（runner 全新也中招）。改回走 PyInstaller 自带 hook：非隔离模式
         # （build.yml PYINSTALLER_DISABLE_ISOLATED=1）下 hook 收集正常，
         # v0.5.12 缺 .so 真因是当时 pyobjc 安装被 --quiet 吞错（已修：去 --quiet + 验证 + set -e）。
-        PYOBJC_BINARIES = []  # 显式收集停用，PyObjC .so 由 hook 收集
+PYOBJC_BINARIES = []  # 显式收集停用，PyObjC .so 由 hook 收集
 
 # ---------- CLI 入口 ----------
 a = Analysis(
