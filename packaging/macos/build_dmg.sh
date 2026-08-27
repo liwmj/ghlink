@@ -39,9 +39,10 @@ cp "$ROOT/assets/ghlink-icon.png" "$APP/Contents/libexec/assets/"
 # DMG 用户零依赖（不需要 brew python@3.14）。USE_PYINSTALLER=1 且产物存在时
 # 用 PyInstaller 产物（dist/macos-pyi/ghlink + ghlink-tray）替换 wrapper+vendor。
 PYI_MODE=0
-if [ "${USE_PYINSTALLER:-0}" = "1" ] && [ -d "$ROOT/dist/macos-pyi/ghlink" ]; then
-  echo "==> PyInstaller 内嵌模式（onedir）：复制自包含产物（ghlink + ghlink-tray + _internal）"
-  cp -R "$ROOT/dist/macos-pyi/ghlink/." "$APP/Contents/MacOS/"
+if [ "${USE_PYINSTALLER:-0}" = "1" ] && [ -x "$ROOT/dist/macos-pyi/ghlink" ] && [ -x "$ROOT/dist/macos-pyi/ghlink-tray" ]; then
+  echo "==> PyInstaller 内嵌模式：复制自包含产物"
+  cp "$ROOT/dist/macos-pyi/ghlink" "$APP/Contents/MacOS/ghlink"
+  cp "$ROOT/dist/macos-pyi/ghlink-tray" "$APP/Contents/MacOS/ghlink-tray"
   chmod 0755 "$APP/Contents/MacOS/ghlink" "$APP/Contents/MacOS/ghlink-tray"
   PYI_MODE=1
 else
@@ -223,11 +224,11 @@ if [ -d "$DMG_CONTENT/ghlink.app" ]; then
 fi
 # 安装说明（李工 14:36「装两个文件离谱」收敛：手动安装 = 拖一个文件，系统组件首启自装）
 # v0.5.12 更新：内嵌运行时 + Gatekeeper 签名提示（李工 13:15 定）
-cat > "$DMG_CONTENT/安装说明.txt" <<EOF
-ghlink 安装说明（${VERSION%-*} dmg 版）
+cat > "$DMG_CONTENT/安装说明.txt" <<'EOF'
+ghlink 安装说明（v0.5.12 dmg 版）
 
-0. 选择正确的包：Intel Mac 用 ghlink-${VERSION%-*}-x86_64.dmg，
-   Apple 芯片（M 系列）用 ghlink-${VERSION%-*}-arm64.dmg
+0. 选择正确的包：Intel Mac 用 ghlink-0.5.12-x86_64.dmg，
+   Apple 芯片（M 系列）用 ghlink-0.5.12-arm64.dmg
 
 1. 把 ghlink.app 拖到 Applications 文件夹（或直接拖到左侧 Applications 快捷方式）
 2. 首次打开：右键 ghlink.app → 打开 → 点「打开」（未公证 app 首次需确认）
