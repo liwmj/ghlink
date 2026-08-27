@@ -115,7 +115,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # v0.5.12（李工 22:11 traceback 实锤）：upx=True 压缩 arm64 onefile 归档
+    # 导致 zlib.error: Error -3 (incorrect header check)——构建"成功"但运行必崩
+    # （连 main.py 都进不去）。必须禁用 UPX，PyObjC/PIL 均已显式收集无需压缩。
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,  # CLI 保留控制台（status/日志可见）
@@ -136,7 +139,10 @@ exe_tray = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # v0.5.12（李工 22:11 traceback 实锤）：upx=True 压缩 arm64 onefile 归档
+    # 导致 zlib.error: Error -3 (incorrect header check)——构建"成功"但运行必崩
+    # （连 main.py 都进不去）。必须禁用 UPX，PyObjC/PIL 均已显式收集无需压缩。
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # 托盘 windowed：无终端窗口（菜单栏常驻）
