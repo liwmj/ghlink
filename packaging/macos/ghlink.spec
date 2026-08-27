@@ -25,7 +25,10 @@ def _pyobjc_binaries():
     try:
         import objc  # noqa: F401
         sp = Path(objc.__file__).resolve().parent.parent  # site-packages 根
-        for pkg in ("objc", "AppKit", "Foundation", "Quartz", "CoreFoundation", "PIL"):
+        # v0.5.13 修复：PIL 不属于 PyObjC——显式收集 PIL .so 会与 PyInstaller 自带
+        # PIL hook 双收集冲突（bincache 目录/文件竞争 → IsADirectoryError）。
+        # PIL 二进制由 hook 正常收集，这里只显式收集 PyObjC 5 包的 .so。
+        for pkg in ("objc", "AppKit", "Foundation", "Quartz", "CoreFoundation"):
             base = sp / pkg
             for so in sorted(glob.glob(str(base / "**" / "*.so"), recursive=True)):
                 if ".dSYM" in so:
