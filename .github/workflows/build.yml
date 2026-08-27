@@ -174,8 +174,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: x86_64
-            runner: macos-13
+          # v0.5.12（李工 19:50 批：速度先打 arm 的）——macos-13 runner 排队 12h 未空，
+          # 临时只跑 arm64（macos-14 不排队），x86_64 包后续补打
           - arch: arm64
             runner: macos-14
     runs-on: ${{ matrix.runner }}
