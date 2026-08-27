@@ -25,6 +25,9 @@ a = Analysis(
     ],
     # v0.5.12（ARM 托盘根因）：PyObjC 框架必须显式 hiddenimports——
     # tray_macos.py 动态 import AppKit/Foundation/Quartz，PyInstaller 静态分析抓不全
+    # v0.5.12（李工 17:39 真机实锤）：CLI 入口也必须含 ghlink.tray_macos——
+    # 否则 `ghlink tray` CLI 形态启动时 from . import tray_macos 失败 → 回退
+    # pystray → ARM 不渲染 → 托盘不显示（与 ghlink-tray 入口对齐）
     hiddenimports=[
         "pystray",
         "PIL",
@@ -33,6 +36,7 @@ a = Analysis(
         "Foundation",
         "Quartz",
         "Cocoa",
+        "ghlink.tray_macos",
     ],
     hookspath=[],
     hooksconfig={},
